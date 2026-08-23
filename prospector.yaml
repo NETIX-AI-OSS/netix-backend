@@ -1,0 +1,14 @@
+strictness: high
+test-warnings: true
+doc-warnings: false
+
+ignore-paths:
+  - .venv
+  - docs
+
+pycodestyle:
+  options:
+    max-line-length: 120
+
+mccabe:
+  run: true

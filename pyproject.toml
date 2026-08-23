@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["netix_backend"]
+
+[project]
+name = "netix-backend"
+version = "1.0.0"
+description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
+readme = "README.md"
+requires-python = ">=3.14,<4.0"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["netix", "django", "drf", "multi-tenant"]
+classifiers = [
+    "Framework :: Django",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "django>=6.0.5,<7",
+    "djangorestframework>=3.16.1,<4",
+    "django-filter>=24.3",
+    "httpx>=0.28,<0.29",
+    "envoy-pyauth>=2.0.0",
+]
+
+[project.optional-dependencies]
+spectacular = ["drf-spectacular>=0.27.2"]
+async = ["adrf>=0.1.9"]
+excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3"]
+
+[project.urls]
+Homepage = "https://github.com/NETIX-AI-OSS/netix-backend"
+Repository = "https://github.com/NETIX-AI-OSS/netix-backend"
+Issues = "https://github.com/NETIX-AI-OSS/netix-backend/issues"
+
+[project.entry-points.pytest11]
+netix_backend = "netix_backend.django.testing"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-django>=4.9.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=1.0.0",
+    "mypy>=1.14.0",
+    "django-stubs[compatible-mypy]>=5.1.0",
+    "djangorestframework-stubs[compatible-mypy]>=3.16.0",
+    "ruff>=0.13.0",
+    "prospector>=1.13.0",
+    "pip-audit>=2.7.0",
+    "drf-spectacular>=0.27.2",
+    "adrf>=0.1.9",
+    "openpyxl>=3.1.5,<4",
+    "drf-excel>=2.5.3,<3",
+    "respx>=0.22.0",
+]
+
+[tool.uv.sources]
+# Dev-only: uv ignores sources of non-root packages, so consumers keep their own envoy-pyauth pin.
+envoy-pyauth = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git", tag = "v3.0.0" }
+
+[tool.ruff]
+line-length = 120
+# py313 on purpose: under py314 ruff format strips parens from `except (A, B):`, which the deployed 3.14 parser misreads.
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.14"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_return_any = true
+show_error_codes = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["envoy_pyauth.*", "adrf.*", "drf_excel.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "netix_backend.mypy_settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+asyncio_mode = "auto"
+addopts = "--cov=netix_backend --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+omit = ["netix_backend/mypy_settings.py"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
