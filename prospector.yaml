@@ -7,6 +7,9 @@ ignore-paths:
   - docs
 
 pycodestyle:
+  # E704 is in pycodestyle's own default-ignore set; ruff format writes @overload stubs as `def f(): ...`.
+  disable:
+    - E704
   options:
     max-line-length: 120
 

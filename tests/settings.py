@@ -1,6 +1,8 @@
 """Test settings: in-memory SQLite, locmem cache, the shared exception handler under test."""
 
-SECRET_KEY = "test-only"
+import secrets
+
+SECRET_KEY = secrets.token_urlsafe(32)
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = [

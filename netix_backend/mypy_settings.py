@@ -1,6 +1,8 @@
 """Minimal Django settings so django-stubs can type-check the package."""
 
-SECRET_KEY = "mypy-only"
+import secrets
+
+SECRET_KEY = secrets.token_urlsafe(32)
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
