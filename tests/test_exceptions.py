@@ -237,13 +237,20 @@ class TestEnvelopeDefaults:
         assert response is not None
         assert response.data == {"status_code": 404, "messages": f"['{HTTP404_MESSAGE}']"}
 
-    def test_non_validation_error_is_a_stringified_list(self) -> None:
+    def test_non_validation_error_is_a_bare_string(self) -> None:
+        # The template family emits str(exc) for 401/403/405/500-class errors, never a stringified list.
         response = custom_exception_handler(NotAuthenticated(), {})
         assert response is not None
         assert response.data == {
             "status_code": 401,
-            "messages": "['Authentication credentials were not provided.']",
+            "messages": "Authentication credentials were not provided.",
         }
+
+    @override_settings(NETIX_ERRORS_NON_VALIDATION_AS_LIST=True)
+    def test_non_validation_list_shape_is_opt_in(self) -> None:
+        response = custom_exception_handler(NotAuthenticated(), {})
+        assert response is not None
+        assert response.data["messages"] == "['Authentication credentials were not provided.']"
 
     def test_unhandled_exception_returns_none(self) -> None:
         assert custom_exception_handler(RuntimeError("boom"), {}) is None

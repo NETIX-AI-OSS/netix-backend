@@ -166,7 +166,8 @@ def _as_list_for(exc: Exception) -> bool:
         return True
     if isinstance(exc, Http404):
         return bool(getattr(settings, "NETIX_ERRORS_HTTP404_AS_LIST", True))
-    return bool(getattr(settings, "NETIX_ERRORS_NON_VALIDATION_AS_LIST", True))
+    # Default False: the template family emits str(exc) — a bare string — for 401/403/405/500-class errors.
+    return bool(getattr(settings, "NETIX_ERRORS_NON_VALIDATION_AS_LIST", False))
 
 
 def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:

@@ -69,9 +69,8 @@ def excel_style(preset: Mapping[str, Any], *, wrap: bool = False) -> dict[str, A
 _DEFAULT_STYLE = excel_style(EXCEL_STYLE_ARIAL)
 
 
+# Read-only xlsx export. The binary response schema ships here so no repo can forget it.
 class BaseExcelViewSet(EnvoyScopedQuerysetMixin, XLSXFileMixin, ReadOnlyModelViewSet[Any]):
-    """Read-only xlsx export. The binary response schema ships here so no repo can forget it."""
-
     schema = XlsxExportAutoSchema()
     renderer_classes = (XLSXRenderer,)
     filename = "export.xlsx"

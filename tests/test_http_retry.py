@@ -510,3 +510,19 @@ def test_the_wrapper_closes_the_transport_it_wraps():
     with httpx.Client(transport=wrapper) as client:
         assert client.get("https://svc.internal/x").status_code == 200
     assert closed == [True]
+
+
+def test_post_with_retry_sends_json_bodies() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["content_type"] = request.headers.get("content-type")
+        seen["body"] = request.content
+        return httpx.Response(200)
+
+    response = retry.post_with_retry(
+        "https://svc.test/ack", timeout=1.0, json={"ok": True}, transport=httpx.MockTransport(handler)
+    )
+    assert response.status_code == 200
+    assert seen["content_type"] == "application/json"
+    assert b'"ok"' in seen["body"]

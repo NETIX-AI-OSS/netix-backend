@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.0.1 — 2026-08-23
+
+Fixes from the redirect-service pilot adoption (NETIX-AI/redirect-service#155).
+
+### Changed
+
+- Removed `[tool.uv.sources]` for envoy-pyauth (it leaked into consumer resolution and broke
+  `uv lock` for repos pinning their own envoy-pyauth); the dev pin moved into the dev
+  dependency-group as a direct URL. Consumers no longer need `override-dependencies`.
+- `NETIX_ERRORS_NON_VALIDATION_AS_LIST` now defaults **False**: the template family emits
+  `str(exc)` — a bare string — for 401/403/405/500-class errors. The list shape is opt-in
+  (simulator-service pins it True).
+- `EnvoyPermissionMixin.get_authenticate_header` is now knob-driven (`authenticate_header`,
+  default `None`): adopting `BaseViewSet` no longer silently flips failed-auth 403 → 401.
+  notification-service pins `authenticate_header = WWW_AUTHENTICATE_HEADER`.
+- View-MRO class docstrings converted to comments so drf-spectacular no longer inherits them
+  into every operation description (guarded by a schema-generation regression test).
+- `post_with_retry` accepts `json=`; `request_with_retry` documents that exhausted status
+  retries return the last response rather than raising.
+
+### Migration notes
+
+Consumers that worked around v1.0.0 with `[tool.uv] override-dependencies` or a
+`spectacular` docstring-exclusion hook can drop both on upgrade.
+
 ## v1.0.0 — 2026-08-23
 
 Initial release: the shared base layer extracted from the 18 NETIX backend services.

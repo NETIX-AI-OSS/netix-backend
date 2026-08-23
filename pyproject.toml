@@ -7,7 +7,7 @@ packages = ["netix_backend"]
 
 [project]
 name = "netix-backend"
-version = "1.0.0"
+version = "1.0.1"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
@@ -56,11 +56,9 @@ dev = [
     "openpyxl>=3.1.5,<4",
     "drf-excel>=2.5.3,<3",
     "respx>=0.22.0",
+    # Concrete source for the bare envoy-pyauth requirement, dev-resolution only; never reaches consumers.
+    "envoy-pyauth @ git+https://github.com/NETIX-AI-OSS/envoy-pyauth.git@v3.0.0",
 ]
-
-[tool.uv.sources]
-# Dev-only: uv ignores sources of non-root packages, so consumers keep their own envoy-pyauth pin.
-envoy-pyauth = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git", tag = "v3.0.0" }
 
 [tool.ruff]
 line-length = 120

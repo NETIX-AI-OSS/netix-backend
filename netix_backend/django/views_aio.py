@@ -29,9 +29,8 @@ _CREATE_BASELINES = (mixins.CreateModelMixin.perform_create, TenantWriteScopeMix
 _UPDATE_BASELINES = (mixins.UpdateModelMixin.perform_update, TenantWriteScopeMixin.perform_update)
 
 
+# adrf-routed soft delete with the same 404/validate policy as the sync handler.
 class AsyncSoftDeleteMixin(SoftDeleteMixin):
-    """adrf-routed soft delete with the same 404/validate policy as the sync handler."""
-
     async def adestroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         try:
             instance = await self.aget_object()  # type: ignore[attr-defined]

@@ -235,3 +235,21 @@ class TestXlsxExportAutoSchema:
 
     def test_inherits_the_async_action_handling(self) -> None:
         assert issubclass(XlsxExportAutoSchema, AsyncActionAutoSchema)
+
+
+def test_lib_class_docstrings_do_not_leak_into_operation_descriptions() -> None:
+    # The pilot adoption hit this: a docstring anywhere in the view MRO becomes every endpoint's description.
+    import json
+
+    from drf_spectacular.generators import SchemaGenerator
+
+    schema = SchemaGenerator(urlconf="tests.urls").get_schema(request=None, public=True)
+    text = json.dumps(schema)
+    for leaked in (
+        "Scoped reads, pinned writes",
+        "adrf-routed soft delete",
+        "Read-only xlsx export",
+        "Atomicity as a knob",
+        "keyword-only signature",
+    ):
+        assert leaked not in text

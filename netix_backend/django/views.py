@@ -147,9 +147,8 @@ def write_permissions(codename: str) -> dict[str, str]:
     return dict.fromkeys(("create", "update", "partial_update", "destroy"), codename)
 
 
+# Envoy organization scoping behind one keyword-only signature covering all five in-tree shapes.
 class EnvoyScopedQuerysetMixin:
-    """Envoy organization scoping behind one keyword-only signature covering all five in-tree shapes."""
-
     request: Any
 
     organization_field: ClassVar[str] = "organization_id"
@@ -246,9 +245,8 @@ class EnvoyScopedQuerysetMixin:
         return self._scope_queryset(model_queryset.all())
 
 
+# Write-time organization pinning: the fleet's six ad-hoc ``perform_create`` forks as one knob.
 class TenantWriteScopeMixin:
-    """Write-time organization pinning: the fleet's six ad-hoc ``perform_create`` forks as one knob."""
-
     request: Any
 
     tenant_write_scope: ClassVar[ScopeMode] = "pin"
@@ -329,9 +327,8 @@ class TenantWriteScopeMixin:
         return pinned
 
 
+# ``destroy`` flags the row instead of deleting it, atomically and with one 404 policy.
 class SoftDeleteMixin:
-    """``destroy`` flags the row instead of deleting it, atomically and with one 404 policy."""
-
     soft_delete_field: ClassVar[str] = "is_deleted"
     soft_delete_404_on_repeat: ClassVar[bool] = True
     # stormbreaker's Parser blocks its own retirement; off by default so adoption changes no response codes.
@@ -368,9 +365,8 @@ class SoftDeleteMixin:
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# Atomicity as a knob: the resolved write handler runs inside ``transaction.atomic``.
 class AtomicWriteMixin:
-    """Atomicity as a knob: the resolved write handler runs inside ``transaction.atomic``."""
-
     atomic_actions: ClassVar[frozenset[str]] = frozenset({"create", "update", "partial_update", "destroy"})
 
     def dispatch(self, request: Any, *args: Any, **kwargs: Any) -> Any:
@@ -413,26 +409,28 @@ class ObjectOrgOwnership(BasePermission):
         return bool(EnvoyObjectOrgOwnership().has_object_permission(request, view, obj))
 
 
+# Per-action codename gating plus the object-level organization guard.
 class EnvoyPermissionMixin:
-    """Per-action codename gating plus the object-level organization guard."""
-
     permission_classes: Sequence[Any] = [EnvoyActionPermissions, ObjectOrgOwnership]
     permission_module: ClassVar[str | None] = None
     required_permissions: ClassVar[Mapping[str, str]] = {}
     org_ownership: ClassVar[OwnershipMode] = "library"
     org_ownership_exempt_actions: ClassVar[tuple[str, ...]] = ()
 
+    # None keeps DRF's default (NotAuthenticated coerced to 403); set WWW_AUTHENTICATE_HEADER to get real 401s.
+    authenticate_header: ClassVar[str | None] = None
+
     def get_required_permission(self) -> str | None:
         # envoy_pyauth ships no py.typed marker.
         return cast("str | None", resolve_required_permission(self))
 
+    # drf-stubs types the return as str, but DRF's own default implementation returns None.
     def get_authenticate_header(self, request: Request) -> str:
-        return WWW_AUTHENTICATE_HEADER
+        return cast("str", self.authenticate_header)
 
 
+# Turns declared queryset errors into 400s instead of 500s, for list filtering and pagination.
 class ListErrorMappingMixin:
-    """Turns declared queryset errors into 400s instead of 500s, for list filtering and pagination."""
-
     list_error_map: ClassVar[tuple[ListErrorRule, ...]] = ((ValueError, None, "Invalid query"),)
 
     @contextmanager
@@ -454,9 +452,8 @@ class ListErrorMappingMixin:
             return cast("Response", super().list(request, *args, **kwargs))  # type: ignore[misc]
 
 
+# Create a list of instances when the body is a list, a single instance otherwise.
 class CreateListModelMixin:
-    """Create a list of instances when the body is a list, a single instance otherwise."""
-
     def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         viewset = cast("viewsets.ModelViewSet[Any]", self)
         serializer = viewset.get_serializer(data=request.data, many=isinstance(request.data, list))
@@ -466,9 +463,8 @@ class CreateListModelMixin:
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
+# Update a list of instances when the body is a list, a single instance otherwise.
 class UpdateListModelMixin:
-    """Update a list of instances when the body is a list, a single instance otherwise."""
-
     def update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         viewset = cast("viewsets.ModelViewSet[Any]", self)
         if isinstance(request.data, list):
@@ -485,9 +481,8 @@ class UpdateListModelMixin:
         return Response(serializer.data)
 
 
+# Opt-in ``?include_deleted=true``, dropping only the ``is_deleted`` predicate.
 class IncludeDeletedMixin:
-    """Opt-in ``?include_deleted=true``, dropping only the ``is_deleted`` predicate."""
-
     request: Any
 
     include_deleted_actions: ClassVar[tuple[str, ...]] = INCLUDE_DELETED_ACTIONS

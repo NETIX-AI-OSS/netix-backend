@@ -23,4 +23,5 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "netix_backend.django.exceptions.custom_exception_handler",
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }

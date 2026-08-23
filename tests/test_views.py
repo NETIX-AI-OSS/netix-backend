@@ -549,6 +549,9 @@ def test_required_permission_resolution_and_authenticate_header() -> None:
     view.action = "create"
     view.request = FakeRequest({}, method="POST")
     assert view.get_required_permission() == "widget-edit"
+    # Default None keeps DRF's 403 coercion; setting the knob restores notification-service's real 401s.
+    assert view.get_authenticate_header(view.request) is None
+    view.authenticate_header = views.WWW_AUTHENTICATE_HEADER
     assert view.get_authenticate_header(view.request) == views.WWW_AUTHENTICATE_HEADER
 
 

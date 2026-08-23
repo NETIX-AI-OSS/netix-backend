@@ -386,7 +386,10 @@ def request_with_retry(
     transport: httpx.BaseTransport | None = None,
     **kwargs: Any,
 ) -> httpx.Response:
-    """One-shot request with the shared retry policy; *deadline* caps the whole loop, not just one attempt."""
+    """One-shot request with the shared retry policy; *deadline* caps the whole loop, not just one attempt.
+
+    Exhausted status retries return the last response rather than raising — check ``response.status_code``.
+    """
     attempts = default_retries() if retries is None else retries
     factor = default_backoff() if backoff_factor is None else backoff_factor
     if deadline is not None:
@@ -417,6 +420,7 @@ def post_with_retry(
     *,
     timeout: float | httpx.Timeout,
     data: dict[str, Any] | None = None,
+    json: Any | None = None,
     files: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     retries: int | None = None,
@@ -436,6 +440,7 @@ def post_with_retry(
         deadline=deadline,
         transport=transport,
         data=data,
+        json=json,
         files=files,
         headers=headers,
     )

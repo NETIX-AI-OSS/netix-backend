@@ -506,7 +506,7 @@ wheels = [
 [[package]]
 name = "envoy-pyauth"
 version = "3.0.0"
-source = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?tag=v3.0.0#64d23b1262731e5ba5616470fd48e66f1b1a5804" }
+source = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v3.0.0#64d23b1262731e5ba5616470fd48e66f1b1a5804" }
 dependencies = [
     { name = "django" },
     { name = "django-stubs-ext" },
@@ -853,7 +853,7 @@ wheels = [
 
 [[package]]
 name = "netix-backend"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -882,6 +882,7 @@ dev = [
     { name = "djangorestframework-stubs", extra = ["compatible-mypy"] },
     { name = "drf-excel" },
     { name = "drf-spectacular" },
+    { name = "envoy-pyauth" },
     { name = "mypy" },
     { name = "openpyxl" },
     { name = "pip-audit" },
@@ -902,7 +903,7 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.16.1,<4" },
     { name = "drf-excel", marker = "extra == 'excel'", specifier = ">=2.5.3,<3" },
     { name = "drf-spectacular", marker = "extra == 'spectacular'", specifier = ">=0.27.2" },
-    { name = "envoy-pyauth", git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?tag=v3.0.0" },
+    { name = "envoy-pyauth", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "openpyxl", marker = "extra == 'excel'", specifier = ">=3.1.5,<4" },
 ]
@@ -915,6 +916,7 @@ dev = [
     { name = "djangorestframework-stubs", extras = ["compatible-mypy"], specifier = ">=3.16.0" },
     { name = "drf-excel", specifier = ">=2.5.3,<3" },
     { name = "drf-spectacular", specifier = ">=0.27.2" },
+    { name = "envoy-pyauth", git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v3.0.0" },
     { name = "mypy", specifier = ">=1.14.0" },
     { name = "openpyxl", specifier = ">=3.1.5,<4" },
     { name = "pip-audit", specifier = ">=2.7.0" },
