@@ -45,6 +45,7 @@ class AsyncSoftDeleteMixin(SoftDeleteMixin):
             self.soft_delete_instance(instance)
 
 
+# The async base: same scoping and pinning as BaseViewSet, honouring sync write hooks when overridden.
 class AsyncBaseViewSet(
     EnvoyPermissionMixin,
     EnvoyScopedQuerysetMixin,
@@ -53,8 +54,6 @@ class AsyncBaseViewSet(
     AsyncSoftDeleteMixin,
     adrf_viewsets.ModelViewSet,
 ):
-    """The async base: same scoping and pinning as BaseViewSet, honouring sync write hooks when overridden."""
-
     pagination_class: ClassVar[Any] = BaseLimitOffsetPagination
 
     async def _aget_queryset_filter(self, model: Any, **kwargs: Any) -> QuerySet[Any]:

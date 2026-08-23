@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.2 — 2026-08-23
+
+### Fixed
+
+- v1.0.1's docstring-to-comment conversion missed the multi-line class definitions: `BaseViewSet`
+  and `AsyncBaseViewSet` still carried class docstrings that drf-spectacular surfaces as the
+  default operation description on every generic CRUD endpoint. Both are comments now, and an
+  order-proof regression test asserts no view-MRO class carries a `__doc__` at all. Consumers
+  that re-added a `GET_LIB_DOC_EXCLUDES` hook for this can drop it.
+
+
 ## v1.0.1 — 2026-08-23
 
 Fixes from the redirect-service pilot adoption (NETIX-AI/redirect-service#155).

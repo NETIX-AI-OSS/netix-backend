@@ -546,6 +546,7 @@ def include_deleted_schema(*actions: str) -> Any:
     return extend_schema_view(**dict.fromkeys(actions or INCLUDE_DELETED_ACTIONS, decorated))
 
 
+# Scoped reads, pinned writes, atomic CRUD and soft delete; filter backends stay per-repo.
 class BaseViewSet(
     EnvoyPermissionMixin,
     EnvoyScopedQuerysetMixin,
@@ -554,6 +555,4 @@ class BaseViewSet(
     SoftDeleteMixin,
     viewsets.ModelViewSet[Any],
 ):
-    """Scoped reads, pinned writes, atomic CRUD and soft delete; filter backends stay per-repo."""
-
     pagination_class = BaseLimitOffsetPagination

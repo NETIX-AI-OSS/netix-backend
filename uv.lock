@@ -853,7 +853,7 @@ wheels = [
 
 [[package]]
 name = "netix-backend"
-version = "1.0.1"
+version = "1.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "django" },

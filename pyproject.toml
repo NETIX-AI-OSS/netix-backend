@@ -7,7 +7,7 @@ packages = ["netix_backend"]
 
 [project]
 name = "netix-backend"
-version = "1.0.1"
+version = "1.0.2"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
