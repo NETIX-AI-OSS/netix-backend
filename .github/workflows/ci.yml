@@ -29,5 +29,6 @@ jobs:
       - run: uv run prospector --without-tool pylint --max-line-length 120
       - name: pip-audit
         run: |
-          uv export --locked --no-dev --no-emit-project --output-file requirements-audit.txt
+          # envoy-pyauth is our own git-tag dep: unhashed and not on PyPI, so exclude it from the audit export.
+          uv export --locked --no-dev --no-emit-project --no-emit-package envoy-pyauth --output-file requirements-audit.txt
           uv run pip-audit --disable-pip --no-deps --requirement requirements-audit.txt
