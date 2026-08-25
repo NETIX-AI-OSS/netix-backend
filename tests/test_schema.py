@@ -260,9 +260,10 @@ def test_lib_class_docstrings_do_not_leak_into_operation_descriptions() -> None:
 
 def test_no_view_mro_class_carries_a_docstring() -> None:
     # Order-proof form of the leak test: a docstring on ANY of these classes reaches consumers' schemas.
-    from netix_backend.django import excel, excel_aio, excel_envoy, org_bootstrap, views, views_aio
+    from netix_backend.django import excel, excel_aio, excel_envoy, org_bootstrap, org_scope, views, views_aio
 
     for cls in (
+        org_scope.SuperuserOrgScopeMixin,
         views.BaseViewSet,
         views.EnvoyPermissionMixin,
         views.EnvoyScopedQuerysetMixin,
