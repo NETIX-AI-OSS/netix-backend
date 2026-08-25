@@ -9,6 +9,11 @@ from rest_framework import routers, serializers
 
 from netix_backend.django.excel import BaseExcelViewSet, ExcelExportViewSet
 from netix_backend.django.excel_aio import AsyncExcelViewSet
+from netix_backend.django.org_scope import SuperuserOrgScopeMixin
+from netix_backend.django.org_scope_schema import (
+    superuser_org_scope_autoschema,
+    superuser_org_scope_schema,
+)
 from netix_backend.django.views import (
     BaseViewSet,
     CreateListModelMixin,
@@ -135,6 +140,40 @@ class IncludeDeletedFallbackViewSet(IncludeDeletedMixin, WidgetViewSet):
     include_deleted_queryset = ScopedWidget.objects.all()
 
 
+class OrgScopeViewSet(SuperuserOrgScopeMixin, WidgetViewSet):
+    """asset/data/viz's shape: the mixin owns get_queryset."""
+
+    superuser_org_scope_model = ScopedWidget
+
+
+class BlankOrgScopeViewSet(OrgScopeViewSet):
+    superuser_org_blank_is_absent = True
+
+
+class HelperOrgScopeViewSet(SuperuserOrgScopeMixin, WidgetViewSet):
+    """cafm's shape: the viewset owns get_queryset and calls the helper explicitly."""
+
+    model_queryset = None
+
+    def get_queryset(self) -> Any:
+        return self.get_org_scoped_queryset(ScopedWidget, field_name="organization_id")
+
+
+# Stands in for an adopter's own prose: the library requires it and never supplies one.
+SUPERUSER_ORG_DESCRIPTION = "Read or write another organization's configuration (superusers only)."
+
+
+@superuser_org_scope_schema(description=SUPERUSER_ORG_DESCRIPTION)
+class DecoratedOrgScopeViewSet(OrgScopeViewSet):
+    """asset/data's advertising: the extend_schema_view decorator, applied in the repo."""
+
+
+class AutoSchemaOrgScopeViewSet(OrgScopeViewSet):
+    """cafm's advertising: an AutoSchema subclass bound by the repo, never by the mixin."""
+
+    schema = superuser_org_scope_autoschema(description=SUPERUSER_ORG_DESCRIPTION)()
+
+
 class BulkViewSet(CreateListModelMixin, UpdateListModelMixin, WidgetViewSet):
     pass
 
@@ -215,6 +254,11 @@ router.register("orgless", OrglessViewSet, basename="orgless")
 router.register("list-errors", ListErrorViewSet, basename="list-errors")
 router.register("include-deleted", IncludeDeletedViewSet, basename="include-deleted")
 router.register("include-deleted-fallback", IncludeDeletedFallbackViewSet, basename="include-deleted-fallback")
+router.register("org-scope", OrgScopeViewSet, basename="org-scope")
+router.register("org-scope-blank", BlankOrgScopeViewSet, basename="org-scope-blank")
+router.register("org-scope-helper", HelperOrgScopeViewSet, basename="org-scope-helper")
+router.register("org-scope-decorated", DecoratedOrgScopeViewSet, basename="org-scope-decorated")
+router.register("org-scope-autoschema", AutoSchemaOrgScopeViewSet, basename="org-scope-autoschema")
 router.register("bulk", BulkViewSet, basename="bulk")
 router.register("owned-library", OwnershipLibraryViewSet, basename="owned-library")
 router.register("owned-plain", OwnershipPlainViewSet, basename="owned-plain")

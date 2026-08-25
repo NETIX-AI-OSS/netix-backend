@@ -1,0 +1,9 @@
+inherits:
+  - netix
+uses:
+  - django
+pylint:
+  disable:
+    # BaseViewSet composes 5 netix-backend mixins on top of ModelViewSet; that's the adoption, not a smell.
+    - too-many-ancestors
+    - django-not-configured

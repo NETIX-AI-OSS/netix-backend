@@ -1,0 +1,25 @@
+# Shared NETIX prospector profile. Consumed as `inherits: [netix]`.
+# Child profiles union with the disable/ignore lists here and override scalar options.
+strictness: high
+doc-warnings: false
+
+# Top-level, NOT just pycodestyle: this is the only key that also raises
+# pylint's line-too-long threshold off its strictness:high default of 99.
+max-line-length: 120
+
+# `test-warnings` is deliberately unset: setting it true strips prospector's
+# default test-exclusion ignore-patterns and starts linting every test suite.
+
+ignore-paths:
+  - .venv
+  - clients
+
+pycodestyle:
+  # E704 is in pycodestyle's own default-ignore set; ruff format writes @overload stubs as `def f(): ...`.
+  disable:
+    - E704
+  options:
+    max-line-length: 120
+
+mccabe:
+  run: true
