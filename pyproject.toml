@@ -30,6 +30,16 @@ dependencies = [
 spectacular = ["drf-spectacular>=0.27.2"]
 async = ["adrf>=0.1.9"]
 excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3"]
+otel = [
+    "opentelemetry-sdk>=1.30.0,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30.0,<2",
+    # The [asgi] extra is load-bearing: without it the Django instrumentor skips every uvicorn request.
+    "opentelemetry-instrumentation-django[asgi]>=0.65b0",
+    "opentelemetry-instrumentation-logging>=0.51b0",
+    "opentelemetry-instrumentation-psycopg>=0.51b0",
+    "opentelemetry-instrumentation-redis>=0.51b0",
+    "opentelemetry-instrumentation-httpx>=0.51b0",
+]
 
 [project.urls]
 Homepage = "https://github.com/NETIX-AI-OSS/netix-backend"
@@ -56,6 +66,14 @@ dev = [
     "openpyxl>=3.1.5,<4",
     "drf-excel>=2.5.3,<3",
     "respx>=0.22.0",
+    # Mirrors the [otel] extra so the tests exercise the real SDK path, not a mock of it.
+    "opentelemetry-sdk>=1.30.0,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30.0,<2",
+    "opentelemetry-instrumentation-django[asgi]>=0.65b0",
+    "opentelemetry-instrumentation-logging>=0.51b0",
+    "opentelemetry-instrumentation-psycopg>=0.51b0",
+    "opentelemetry-instrumentation-redis>=0.51b0",
+    "opentelemetry-instrumentation-httpx>=0.51b0",
     # Concrete source for the bare envoy-pyauth requirement, dev-resolution only; never reaches consumers.
     "envoy-pyauth @ git+https://github.com/NETIX-AI-OSS/envoy-pyauth.git@v3.0.0",
 ]
