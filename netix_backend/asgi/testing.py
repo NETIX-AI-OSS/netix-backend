@@ -102,7 +102,9 @@ def assert_no_timeout_middleware_entry(needle: str = "timeout") -> None:
 
 def assert_ceiling_clears_statement_timeout(ceiling_seconds: float, statement_timeout_ms: float) -> None:
     """Opt-in: a DB-bound request must surface its own statement_timeout error, not an opaque 504."""
-    assert ceiling_seconds > statement_timeout_ms / 1000
+    from netix_backend.django.testing import assert_timeout_invariant
+
+    assert_timeout_invariant(request_timeout_seconds=ceiling_seconds, statement_timeout_ms=int(statement_timeout_ms))
 
 
 # uvicorn's HTTP cycle: completing a response wakes the pending receive() with http.disconnect.
