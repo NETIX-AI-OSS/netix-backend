@@ -29,7 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 spectacular = ["drf-spectacular>=0.27.2"]
 async = ["adrf>=0.1.9"]
-excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3"]
+# drf-spectacular belongs here too: the export core ships the binary response schema unconditionally.
+excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3", "drf-spectacular>=0.27.2"]
 
 [project.urls]
 Homepage = "https://github.com/NETIX-AI-OSS/netix-backend"

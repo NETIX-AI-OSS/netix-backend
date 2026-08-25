@@ -869,6 +869,7 @@ async = [
 ]
 excel = [
     { name = "drf-excel" },
+    { name = "drf-spectacular" },
     { name = "openpyxl" },
 ]
 spectacular = [
@@ -902,6 +903,7 @@ requires-dist = [
     { name = "django-filter", specifier = ">=24.3" },
     { name = "djangorestframework", specifier = ">=3.16.1,<4" },
     { name = "drf-excel", marker = "extra == 'excel'", specifier = ">=2.5.3,<3" },
+    { name = "drf-spectacular", marker = "extra == 'excel'", specifier = ">=0.27.2" },
     { name = "drf-spectacular", marker = "extra == 'spectacular'", specifier = ">=0.27.2" },
     { name = "envoy-pyauth", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.28,<0.29" },

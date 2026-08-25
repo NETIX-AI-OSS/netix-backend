@@ -7,7 +7,8 @@ from adrf import routers as adrf_routers
 from django.urls import include, path
 from rest_framework import routers, serializers
 
-from netix_backend.django.excel import BaseExcelViewSet
+from netix_backend.django.excel import BaseExcelViewSet, ExcelExportViewSet
+from netix_backend.django.excel_aio import AsyncExcelViewSet
 from netix_backend.django.views import (
     BaseViewSet,
     CreateListModelMixin,
@@ -175,6 +176,22 @@ class ExcelWidgetViewSet(EnvoyHeaderMixin, BaseExcelViewSet):
     permission_classes: ClassVar[list[Any]] = []
 
 
+class UnscopedExcelViewSet(ExcelExportViewSet):
+    """The envoy-free core: every row, whoever asks — user-management scopes its own way."""
+
+    serializer_class = ScopedWidgetSerializer
+    queryset = ScopedWidget.objects.all()
+    permission_classes: ClassVar[list[Any]] = []
+
+
+class AsyncExcelWidgetViewSet(AsyncExcelViewSet):
+    """user-management's adrf export shape: GET is routed to alist/aretrieve."""
+
+    serializer_class = ScopedWidgetSerializer
+    queryset = ScopedWidget.objects.all()
+    permission_classes: ClassVar[list[Any]] = []
+
+
 class AsyncWidgetViewSet(EnvoyHeaderMixin, AsyncBaseViewSet):
     serializer_class = ScopedWidgetSerializer
     model_queryset = ScopedWidget.objects.all()
@@ -205,10 +222,12 @@ router.register("owned-plain-legacy", OwnershipPlainLegacyViewSet, basename="own
 router.register("owned-exempt", OwnershipExemptViewSet, basename="owned-exempt")
 router.register("gated", PermissionViewSet, basename="gated")
 router.register("excel", ExcelWidgetViewSet, basename="excel")
+router.register("excel-unscoped", UnscopedExcelViewSet, basename="excel-unscoped")
 
 async_router = adrf_routers.SimpleRouter()
 async_router.register("async-widgets", AsyncWidgetViewSet, basename="async-widget")
 async_router.register("async-unpinned", AsyncUnpinnedViewSet, basename="async-unpinned")
+async_router.register("async-excel", AsyncExcelWidgetViewSet, basename="async-excel")
 
 urlpatterns: list = [
     path("api/", include(router.urls)),
