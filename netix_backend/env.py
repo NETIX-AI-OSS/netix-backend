@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Literal, overload
+from typing import Final, Literal, overload
 
 TRUTHY = frozenset({"1", "true", "yes", "on"})
 FALSY = frozenset({"0", "false", "no", "off"})
@@ -14,6 +14,31 @@ logger = logging.getLogger(__name__)
 
 class ConfigurationError(RuntimeError):
     """A required environment variable is missing or cannot be parsed."""
+
+
+class _Omit:
+    """Sentinel meaning "leave this key out entirely", which is not the same as setting it to None or False."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "OMIT"
+
+
+# Homed here rather than in either settings factory, so the DATABASES and Sentry helpers share one sentinel identity.
+OMIT: Final = _Omit()
+
+
+class _Required:
+    """Sentinel marking a value that must be read strictly, the way ``os.environ[name]`` reads it."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "REQUIRED"
+
+
+REQUIRED: Final = _Required()
 
 
 def _lookup(name: str) -> str | None:
@@ -144,6 +169,8 @@ def service_authorization(*env_names: str, fallback: str = "USER_SVC_AUTH") -> s
 
 __all__ = (
     "FALSY",
+    "OMIT",
+    "REQUIRED",
     "TRUTHY",
     "ConfigurationError",
     "env_bool",
