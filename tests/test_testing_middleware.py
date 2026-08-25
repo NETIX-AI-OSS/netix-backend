@@ -13,6 +13,7 @@ from netix_backend.django.testing_middleware import (
     EnvoyTestAuthorizationMiddleware,
     ExplicitEnvoyIdentityMiddleware,
     configured_bearer,
+    configured_header_guard,
     configured_identity,
 )
 from tests.models import ScopedWidget
@@ -87,6 +88,26 @@ class TestEnvoyTestAuthorizationMiddleware:
         request = make_request(HTTP_AUTHORIZATION="Bearer someone-elses-token")
         UnguardedMiddleware(lambda _request: None).process_view(request, view, (), {})
         assert request.envoy == testing.DEFAULT_ENVOY_IDENTITY
+
+
+class TestHeaderGuardSetting:
+    def test_the_guard_is_on_unless_a_repo_turns_it_off(self) -> None:
+        assert configured_header_guard() is True
+
+    @override_settings(NETIX_TEST_ENVOY_HEADER_GUARD=False)
+    def test_the_setting_turns_it_off(self) -> None:
+        assert configured_header_guard() is False
+
+    @override_settings(NETIX_TEST_ENVOY_HEADER_GUARD=False, NETIX_TEST_ENVOY_IDENTITY=CAFM_IDENTITY)
+    def test_the_setting_replaces_the_header_guard_false_subclass(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # update-service and stormbreaker ship app/test_auth_middleware.py for nothing but this one attribute.
+        import envoy_pyauth.middleware as envoy_middleware
+
+        monkeypatch.setattr(envoy_middleware, "_resolve", lambda header: {"organization": 7, "permissions": []})
+        request = make_request(HTTP_AUTHORIZATION="Bearer someone-elses-token")
+        EnvoyTestAuthorizationMiddleware(lambda _request: None).process_view(request, view, (), {})
+        assert request.envoy == CAFM_IDENTITY
+        assert request.META["HTTP_AUTHORIZATION"] == testing.DEFAULT_TEST_BEARER
 
 
 class TestExplicitEnvoyIdentityMiddleware:
