@@ -7,7 +7,7 @@ packages = ["netix_backend"]
 
 [project]
 name = "netix-backend"
-version = "1.0.2"
+version = "1.1.0"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
@@ -29,7 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 spectacular = ["drf-spectacular>=0.27.2"]
 async = ["adrf>=0.1.9"]
-excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3"]
+# drf-spectacular belongs here too: the export core ships the binary response schema unconditionally.
+excel = ["openpyxl>=3.1.5,<4", "drf-excel>=2.5.3,<3", "drf-spectacular>=0.27.2"]
 otel = [
     "opentelemetry-sdk>=1.30.0,<2",
     "opentelemetry-exporter-otlp-proto-grpc>=1.30.0,<2",

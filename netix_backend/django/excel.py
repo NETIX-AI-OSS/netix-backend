@@ -1,10 +1,10 @@
-"""Shared XLSX export viewset: two style presets and the binary response schema, applied unconditionally."""
+"""Envoy-free xlsx export core: the two style presets, the renderer wiring and the binary response schema."""
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
-from typing import Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from drf_excel.mixins import XLSXFileMixin
 from drf_excel.renderers import XLSXRenderer
@@ -15,13 +15,20 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from netix_backend.django.pagination import BigLimitOffsetPagination
 from netix_backend.django.schema import XLSX_BINARY_RESPONSE, XlsxExportAutoSchema
-from netix_backend.django.views import EnvoyScopedQuerysetMixin
+
+if TYPE_CHECKING:
+    # Declared for type checkers and linters only; at runtime __getattr__ below resolves them on demand.
+    from netix_backend.django.excel_envoy import BaseExcelViewSet, ScopedExcelViewSet
 
 __all__ = [
     "EXCEL_STYLE_APTOS",
     "EXCEL_STYLE_ARIAL",
     "WRAP_ALIGNMENT",
     "BaseExcelViewSet",
+    "DocumentedExcelViewSet",
+    "ExcelExportMixin",
+    "ExcelExportViewSet",
+    "ScopedExcelViewSet",
     "excel_style",
 ]
 
@@ -33,6 +40,9 @@ WRAP_ALIGNMENT: Final[dict[str, Any]] = {
     "wrapText": True,
     "shrink_to_fit": True,
 }
+
+# The scoped variants live in excel_envoy so importing this module never pulls the envoy import chain.
+_ENVOY_EXPORTS: Final[frozenset[str]] = frozenset({"BaseExcelViewSet", "ScopedExcelViewSet"})
 
 
 def _preset(font: str, header_size: int, body_size: int) -> dict[str, Any]:
@@ -69,14 +79,25 @@ def excel_style(preset: Mapping[str, Any], *, wrap: bool = False) -> dict[str, A
 _DEFAULT_STYLE = excel_style(EXCEL_STYLE_ARIAL)
 
 
-# Read-only xlsx export. The binary response schema ships here so no repo can forget it.
-class BaseExcelViewSet(EnvoyScopedQuerysetMixin, XLSXFileMixin, ReadOnlyModelViewSet[Any]):
-    schema = XlsxExportAutoSchema()
-    renderer_classes = (XLSXRenderer,)
+# The renderer, filename and style attributes, on no viewset base, so the sync and adrf shapes share them.
+class ExcelExportMixin:
+    renderer_classes: Any = (XLSXRenderer,)
     filename = "export.xlsx"
-    pagination_class = BigLimitOffsetPagination
+    # Pin your repo's own numbers with limit_offset_pagination(); the fleet's export page sizes all differ.
+    pagination_class: Any = BigLimitOffsetPagination
+    # filter_backends stays unset so DRF's DEFAULT_FILTER_BACKENDS still apply; declare your own list per repo.
     column_header: ClassVar[dict[str, Any]] = _DEFAULT_STYLE["column_header"]
     body: ClassVar[dict[str, Any]] = _DEFAULT_STYLE["body"]
+
+
+# Read-only xlsx export with no organization scoping and no OpenAPI opinion; the smallest adoptable base.
+class ExcelExportViewSet(ExcelExportMixin, XLSXFileMixin, ReadOnlyModelViewSet[Any]):
+    pass
+
+
+# Adds the binary response schema, so a service that publishes a contract cannot advertise the export as JSON.
+class DocumentedExcelViewSet(ExcelExportViewSet):
+    schema = XlsxExportAutoSchema()
 
     @extend_schema(responses={200: XLSX_BINARY_RESPONSE})
     def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -85,3 +106,14 @@ class BaseExcelViewSet(EnvoyScopedQuerysetMixin, XLSXFileMixin, ReadOnlyModelVie
     @extend_schema(responses={200: XLSX_BINARY_RESPONSE})
     def retrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         return super().retrieve(request, *args, **kwargs)
+
+
+def __getattr__(name: str) -> Any:
+    # Compatibility shim: BaseExcelViewSet stays importable from here without this module importing envoy.
+    if name in _ENVOY_EXPORTS:
+        from netix_backend.django import excel_envoy
+
+        value = getattr(excel_envoy, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

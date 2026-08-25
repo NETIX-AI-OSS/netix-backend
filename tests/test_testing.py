@@ -171,6 +171,58 @@ class TestScopedEnvoy:
         assert isinstance(envoy_filter().__dict__["get_queryset"], classmethod)
 
 
+class TestPlatformTestIdentity:
+    def test_the_merged_superset_is_opt_in(self) -> None:
+        # DEFAULT_ENVOY_IDENTITY stays cafm's minimal three keys; widening is a choice, not a side effect.
+        assert set(testing.DEFAULT_ENVOY_IDENTITY) == {"organization", "is_superuser", "permissions"}
+        assert "is_platform_internal" in testing.DEFAULT_TEST_PLATFORM_IDENTITY
+
+    def test_permissions_are_per_service(self) -> None:
+        identity = testing.platform_test_identity(permissions=["asset-map-write"])
+        assert identity["permissions"] == ["asset-map-write"]
+        assert identity["username"] == "platform_internal"
+
+    def test_any_key_can_be_overridden(self) -> None:
+        assert testing.platform_test_identity(organization=7)["organization"] == 7
+
+    def test_the_caller_cannot_mutate_the_constant(self) -> None:
+        testing.platform_test_identity()["permissions"].append("x")
+        assert testing.DEFAULT_TEST_PLATFORM_IDENTITY["permissions"] == []
+
+
+class TestSwapAuthMiddleware:
+    BASE = ["django.middleware.common.CommonMiddleware", testing.ENVOY_MIDDLEWARE_PATH, "app.other.Middleware"]
+
+    def test_swaps_the_envoy_entry_in_place(self) -> None:
+        swapped = testing.swap_auth_middleware(self.BASE)
+        assert swapped[1] == testing.TEST_MIDDLEWARE_PATH
+        assert swapped[0] == self.BASE[0] and swapped[2] == self.BASE[2]
+
+    def test_the_replacement_is_choosable(self) -> None:
+        swapped = testing.swap_auth_middleware(self.BASE, testing.EXPLICIT_MIDDLEWARE_PATH)
+        assert swapped[1] == testing.EXPLICIT_MIDDLEWARE_PATH
+
+    def test_a_list_without_the_envoy_entry_is_unchanged(self) -> None:
+        assert testing.swap_auth_middleware(["a", "b"]) == ["a", "b"]
+
+    def test_the_target_is_overridable_for_a_repo_local_subclass(self) -> None:
+        assert testing.swap_auth_middleware(["app.Auth"], "x", target="app.Auth") == ["x"]
+
+
+class TestLazyMiddlewareAttributes:
+    def test_the_dotted_paths_resolve_the_way_django_resolves_middleware(self) -> None:
+        from django.utils.module_loading import import_string
+
+        from netix_backend.django import testing_middleware
+
+        assert import_string(testing.TEST_MIDDLEWARE_PATH) is testing_middleware.EnvoyTestAuthorizationMiddleware
+        assert import_string(testing.EXPLICIT_MIDDLEWARE_PATH) is testing_middleware.ExplicitEnvoyIdentityMiddleware
+
+    def test_an_unknown_attribute_still_raises(self) -> None:
+        with pytest.raises(AttributeError, match="has no attribute 'Nope'"):
+            testing.Nope  # noqa: B018
+
+
 class TestPatchHelpers:
     def test_unscoped_helper_can_be_used_from_a_repo_conftest(
         self, monkeypatch: pytest.MonkeyPatch, fake_model: type[FakeModel]
