@@ -1,17 +1,12 @@
-strictness: high
+# Self-hosting the packaged profile this repo ships: if the lib's own gate passes through
+# `inherits: [netix]`, the mechanism is proven in CI rather than in a scratch venv.
+inherits:
+  - netix
+
+# Local, never shared: setting this strips prospector's default test-exclusion
+# ignore-patterns, which would start linting every adopter's test suite.
 test-warnings: true
-doc-warnings: false
 
 ignore-paths:
   - .venv
   - docs
-
-pycodestyle:
-  # E704 is in pycodestyle's own default-ignore set; ruff format writes @overload stubs as `def f(): ...`.
-  disable:
-    - E704
-  options:
-    max-line-length: 120
-
-mccabe:
-  run: true

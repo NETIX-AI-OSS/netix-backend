@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["netix_backend"]
+packages = ["netix_backend", "prospector_profile_netix"]
 
 [project]
 name = "netix-backend"
