@@ -16,6 +16,7 @@ __all__ = [
     "EnvoyTestAuthorizationMiddleware",
     "ExplicitEnvoyIdentityMiddleware",
     "configured_bearer",
+    "configured_header_guard",
     "configured_identity",
 ]
 
@@ -31,9 +32,15 @@ def configured_bearer() -> str:
     return str(getattr(settings, "NETIX_TEST_ENVOY_BEARER", DEFAULT_TEST_BEARER))
 
 
+def configured_header_guard() -> bool:
+    """``NETIX_TEST_ENVOY_HEADER_GUARD``: the settings form of the subclass update-service and stormbreaker ship."""
+    return bool(getattr(settings, "NETIX_TEST_ENVOY_HEADER_GUARD", True))
+
+
 # Resolves a test-only bearer at envoy-pyauth v2's resolver seam; production keeps failing closed.
 class EnvoyTestAuthorizationMiddleware(AuthorizationMiddleware):
     # A request that brings its own credential is resolved for real, so permission-denial tests stay honest.
+    # Either the class attribute or NETIX_TEST_ENVOY_HEADER_GUARD=False turns the guard off.
     header_guard: ClassVar[bool] = True
 
     def process_view(
@@ -44,7 +51,7 @@ class EnvoyTestAuthorizationMiddleware(AuthorizationMiddleware):
         **view_kwargs: Any,
     ) -> HttpResponseBase | None:
         # envoy_pyauth ships no py.typed marker, so its return type arrives as Any.
-        if self.header_guard and request.META.get("HTTP_AUTHORIZATION"):
+        if self.header_guard and configured_header_guard() and request.META.get("HTTP_AUTHORIZATION"):
             return cast("HttpResponseBase | None", super().process_view(request, view_func, *view_args, **view_kwargs))
         request.META["HTTP_AUTHORIZATION"] = configured_bearer()
         with patch("envoy_pyauth.middleware._resolve", return_value=configured_identity()):
