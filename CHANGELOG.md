@@ -1,5 +1,63 @@
 # Changelog
 
+## v1.2.0 — 2026-08-25
+
+Third wave: the Tier-1/Tier-3 reuse candidates, verified by a six-survey research pass over the
+18 services. Everything ships behavior-preserving; per-repo call sites reproduce today's
+settings byte-identical.
+
+### Added
+
+- `netix_backend.database` (Django-free; also importable as `netix_backend.django.database`) —
+  `postgres_database(...)` and `replica_of(...)` DATABASES factories with `FromEnv` (raw
+  `os.environ` semantics: an empty string stays an empty string) and the `OMIT` / `REQUIRED`
+  sentinels (now homed in `netix_backend.env`). `OPTIONS` is emitted only when a member is
+  set, so the fleet's 9-present / 9-absent `prepare_threshold` split survives adoption
+  unchanged; flipping it is a visible one-argument diff per repo.
+- `netix_backend.observability.sentry.configure_sentry(...)` — the `sentry_sdk.init`
+  boilerplate 17 services repeat. `environment` is required with no default (a hardcoded
+  "main" stays a visible argument; unification remains a separate reviewable change);
+  `enabled` is computed at the call site so all five fleet `SENTRY_ENABLED` spellings survive
+  verbatim; `sentry_sdk` is imported only inside the function; an empty `dsn` passes through
+  (simulator-service relies on that path); `traces_sample_rate=OMIT` omits the kwarg
+  (user-management), `logging_event_level=None` sends `LoggingIntegration(event_level=None)`
+  (backend-template).
+- `netix_backend.django.test_settings` — the two-phase test-settings bootstrap:
+  `apply_test_env(force=..., exclude=..., **overrides)` (applies, unlike v1.1.0's dead
+  `netix_test_settings()`; `force=` for cafm's hard-set Redis keys, `exclude=` so
+  user-management's `DJANGO_SECRET`-derived MFA keys stay untouched), `load_base_settings()`,
+  `test_overrides(...)` and `EnvoySpec`. `TEST_ENV_DEFAULTS` gained
+  `CSRF_TRUSTED_ORIGINS="http://localhost:8000"`.
+- Test-double kit in `netix_backend.django.testing`: `client_response()` (+
+  `client_response_factory` fixture) replacing the DummyResponse stubs nine repos hand-roll,
+  `envoy_api_client()` (+ `envoy_client` fixture), `block_http()` (+ `no_unmocked_http`
+  fixture), `clear_envoy_cache`, `envoy_request_factory`. None autouse. The test middlewares
+  now honor a `NETIX_TEST_ENVOY_HEADER_GUARD` setting (default True), so the two repos pinning
+  `header_guard = False` can delete their subclass files.
+- `netix_backend.django.org_scope.SuperuserOrgScopeMixin` — the superuser `?organization=<id>`
+  cross-org mechanism four repos fork, runtime only: the mixin never defines `schema`, never
+  imports drf-spectacular, never emits a parameter. Knobs cover every measured divergence
+  (blank-param handling, invalid-message text, scope field, ordering, extra filter) and both
+  entry surfaces ship (`get_queryset` and `get_org_scoped_queryset` for cafm's shape). The
+  four advertising helpers live in `netix_backend.django.org_scope_schema`
+  (`..._parameter` / `..._schema` / `..._autoschema` / `..._parameter_dict`); `description`
+  is required on all four so the library can never rewrite a repo's contract prose.
+- `prospector_profile_netix` — a second package in the same wheel carrying the shared
+  prospector profile; consume with `inherits: [netix]` (Django variant: `[netix:django]`).
+  The top-level `max-line-length: 120` is the only key that also raises pylint's threshold;
+  `test-warnings` is deliberately unset (setting it strips prospector's default
+  test-exclusion patterns). This library's own prospector.yaml now inherits it.
+
+### Migration notes
+
+- The pin bump to v1.2.0 and a repo's `prospector.yaml` switch to `inherits: [netix]` must
+  land in the same commit — inheriting against an installed v1.1.0 is a hard prospector
+  failure.
+- `postgres_database` / `configure_sentry` adoption calls are catalogued per repo in the
+  research spec; dict contents are identical but key order is canonical (`key_order=` is the
+  escape hatch for repr-snapshot tests).
+- vision-ai-service adopts the database factory with three explicit `OMIT`s and has no Sentry.
+
 ## v1.1.0 — 2026-08-25
 
 Second extraction wave: an opus research sweep across the 18 services surfaced twelve more

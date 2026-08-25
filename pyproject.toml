@@ -7,7 +7,7 @@ packages = ["netix_backend", "prospector_profile_netix"]
 
 [project]
 name = "netix-backend"
-version = "1.1.0"
+version = "1.2.0"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
@@ -97,7 +97,7 @@ show_error_codes = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["envoy_pyauth.*", "adrf.*", "drf_excel.*"]
+module = ["envoy_pyauth.*", "adrf.*", "drf_excel.*", "sentry_sdk.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]

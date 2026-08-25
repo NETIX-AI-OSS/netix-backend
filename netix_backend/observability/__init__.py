@@ -11,6 +11,7 @@ from netix_backend.observability.logging import (
     logging_config,
 )
 from netix_backend.observability.otel import configure, is_configured, reset_for_tests
+from netix_backend.observability.sentry import configure_sentry
 from netix_backend.observability.sentry_filters import (
     IGNORED_TELEMETRY_LOGGERS,
     chain,
@@ -26,6 +27,7 @@ from netix_backend.observability.sentry_filters import (
 )
 
 __all__ = (
+    "configure_sentry",
     "CONSOLE_FORMAT",
     "DEFAULT_LOGGERS",
     "IGNORED_TELEMETRY_LOGGERS",

@@ -18,12 +18,12 @@ def _integrations(
     """Resolve the integration list, importing each SDK integration only where it is actually wanted."""
     resolved: list[Any] = list(integrations) if integrations is not None else []
     if integrations is None and django_integration:
-        from sentry_sdk.integrations.django import DjangoIntegration  # type: ignore[import-not-found]
+        from sentry_sdk.integrations.django import DjangoIntegration
 
         resolved.append(DjangoIntegration())
     # Not OMIT-vs-None: OMIT drops the integration, None passes event_level=None, which backend-template needs.
     if not isinstance(logging_event_level, _Omit):
-        from sentry_sdk.integrations.logging import LoggingIntegration  # type: ignore[import-not-found]
+        from sentry_sdk.integrations.logging import LoggingIntegration
 
         resolved.append(LoggingIntegration(event_level=logging_event_level))
     return resolved
@@ -51,7 +51,7 @@ def configure_sentry(
         return False
     # Imported here, not at module scope: every service imports the SDK inside its own `if SENTRY_ENABLED` today,
     # so a module-level import would newly load sentry_sdk in every disabled and test process.
-    import sentry_sdk  # type: ignore[import-not-found]
+    import sentry_sdk
 
     # No ignore here: sentry-sdk is not a dependency, and mypy reports each missing module once, at its first import.
     from sentry_sdk.integrations.logging import ignore_logger

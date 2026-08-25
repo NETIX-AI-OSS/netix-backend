@@ -11,7 +11,7 @@ One package, one version. Import only what you need — an unused subpackage cos
 ```toml
 # pyproject.toml
 dependencies = [
-    "netix-backend @ git+https://github.com/NETIX-AI-OSS/netix-backend.git@v1.1.0",
+    "netix-backend @ git+https://github.com/NETIX-AI-OSS/netix-backend.git@v1.2.0",
 ]
 ```
 
@@ -30,6 +30,12 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
 | `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `IGNORED_TELEMETRY_LOGGERS` |
 | `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key` — importable without Django configured |
+| `netix_backend.database` | `postgres_database()`, `replica_of()`, `FromEnv`, `OMIT` / `REQUIRED` — DATABASES factories, importable without Django configured (alias: `netix_backend.django.database`) |
+| `netix_backend.observability.sentry` | `configure_sentry()` — the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit |
+| `netix_backend.django.org_scope` | `SuperuserOrgScopeMixin` — runtime `?organization=<id>` cross-org scoping for superusers, schema-free |
+| `netix_backend.django.org_scope_schema` | the four OpenAPI advertising helpers (`..._parameter`, `..._schema`, `..._autoschema`, `..._parameter_dict`), `description` always required |
+| `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec` — the two-phase test-settings bootstrap |
+| `prospector_profile_netix` | the shared prospector profile: `inherits: [netix]` (or `[netix:django]`) in a repo's prospector.yaml |
 | `netix_backend.django.models` | `BaseModel`, `NamedBaseModel`, `SluggedNamedBaseModel`, `CompactNamedBaseModel`, `BaseManager`, `CloneProvenanceMixin`, `organization_scoped()` |
 | `netix_backend.django.views` | `BaseViewSet` and its mixins (scoping, tenant write pinning, atomic writes, soft delete, permissions); `include_deleted_schema()` needs the `spectacular` extra |
 | `netix_backend.django.views_aio` | `AsyncBaseViewSet` (requires the `async` extra) |
@@ -44,7 +50,7 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.django.db_timeout` | `install()` / `statement_timeout_ms()` — per-connection Postgres `statement_timeout` |
 | `netix_backend.django.cache` | `redis_caches()`, `cache_ttls()` — the Redis/Sentinel `CACHES` block and the TTL names |
 | `netix_backend.django.org_bootstrap` | `build_org_bootstrap_view()`, `CloneError`, the `ClonePrimitives` / `TeardownPrimitives` protocols |
-| `netix_backend.django.testing` | `unscoped_envoy` / `explicit_envoy_identity` pytest fixtures, `netix_test_settings()`, `swap_auth_middleware()`, `platform_test_identity()`, `assert_timeout_invariant()`, the two test middlewares |
+| `netix_backend.django.testing` | `unscoped_envoy` / `explicit_envoy_identity` / `envoy_client` / `no_unmocked_http` / `clear_envoy_cache` / `envoy_request_factory` fixtures, `client_response()`, `envoy_api_client()`, `block_http()`, `swap_auth_middleware()`, `platform_test_identity()`, `assert_timeout_invariant()`, the two test middlewares (`NETIX_TEST_ENVOY_HEADER_GUARD`) |
 
 `BaseViewSet` scopes reads through `model_queryset` (or an explicit `_get_queryset_filter()` call in a
 `get_queryset` override). A plain DRF `queryset = …` attribute is handed back unscoped, exactly as in the
@@ -208,6 +214,99 @@ key_owner("fire_alarm")  # None
 
 Display columns are never prefixed: a clone keeps its template's `display_name` byte-identical,
 because that is the cross-service name contract.
+
+## Databases
+
+```python
+# app/settings.py — no Django required at this point
+from netix_backend.database import OMIT, FromEnv, postgres_database, replica_of
+
+DATABASES = {"default": postgres_database(conn_max_age=0)}
+DATABASES["read_replica"] = replica_of(
+    DATABASES["default"],
+    host=os.environ.get("POSTGRES_READ_REPLICA_HOST", "historian.platform"),
+    port=os.environ.get("POSTGRES_READ_REPLICA_PORT", "5433"),
+    test={"MIRROR": "default"},
+)
+```
+
+`FromEnv("POSTGRES_HOST", "historian.platform")` reproduces `os.environ.get(...)` exactly — an
+empty string stays an empty string, never the default. `OMIT` drops a key entirely; the
+`OPTIONS` dict is only emitted when `prepare_threshold` / `connect_timeout` / `options` is set,
+so repos without it today keep not having it.
+
+## Sentry init
+
+```python
+# app/settings.py
+from netix_backend.observability.sentry import configure_sentry
+
+configure_sentry(
+    enabled=SENTRY_ENABLED,
+    dsn=os.environ["SENTRY_URL"],
+    environment="main",
+    before_send=chain(drop_cancelled_errors),
+    ignore_loggers=IGNORED_TELEMETRY_LOGGERS,
+)
+```
+
+`environment` has no default on purpose. `enabled` is computed by the caller, so gating
+spellings stay per-repo. `sentry_sdk` is imported only when `enabled` is true.
+
+## Test settings
+
+```python
+# app/test_settings.py
+from netix_backend.django.test_settings import EnvoySpec, apply_test_env, test_overrides
+
+apply_test_env()
+
+from . import settings as base_settings  # noqa: E402
+from .settings import *  # noqa: E402,F401,F403
+
+globals().update(
+    test_overrides(
+        base_settings,
+        static_root=True,
+        envoy=EnvoySpec(permissions=["asset-map-write"], username="asset-service-test-platform"),
+    )
+)
+```
+
+`apply_test_env(force=...)` assigns unconditionally (for keys where an inherited value is
+harmful); `exclude=(...)` keeps a key unset (user-management's `DJANGO_SECRET`-derived MFA
+keys depend on this).
+
+## Superuser org scoping
+
+```python
+from netix_backend.django.org_scope import SuperuserOrgScopeMixin
+from netix_backend.django.org_scope_schema import superuser_org_scope_parameter
+
+SUPERUSER_ORG_PARAM = superuser_org_scope_parameter(description="...your contract prose...")
+
+
+# One-line comment, no docstring: spectacular surfaces MRO docstrings into every operation.
+class OrganizationConfigViewSet(SuperuserOrgScopeMixin, BaseViewSet):
+    superuser_org_scope_model = OrganizationConfig
+```
+
+The mixin is runtime-only. OpenAPI advertising stays in the repo through one of the four
+helpers — `description` is required, so the published contract text never moves silently.
+
+## Shared lint profile
+
+```yaml
+# prospector.yaml
+inherits:
+  - netix
+
+ignore-paths:
+  - service/migrations
+```
+
+The profile ships inside this wheel as `prospector_profile_netix`. The pin bump that first
+delivers it and the `inherits:` switch must land in the same commit.
 
 ## Development
 
