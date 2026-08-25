@@ -251,13 +251,16 @@ def test_lib_class_docstrings_do_not_leak_into_operation_descriptions() -> None:
         "Read-only xlsx export",
         "Atomicity as a knob",
         "keyword-only signature",
+        "the smallest adoptable base",
+        "adrf routes GET",
+        "Internal-only in the fleet's sense",
     ):
         assert leaked not in text
 
 
 def test_no_view_mro_class_carries_a_docstring() -> None:
     # Order-proof form of the leak test: a docstring on ANY of these classes reaches consumers' schemas.
-    from netix_backend.django import excel, views, views_aio
+    from netix_backend.django import excel, excel_aio, excel_envoy, org_bootstrap, views, views_aio
 
     for cls in (
         views.BaseViewSet,
@@ -272,6 +275,13 @@ def test_no_view_mro_class_carries_a_docstring() -> None:
         views.IncludeDeletedMixin,
         views_aio.AsyncSoftDeleteMixin,
         views_aio.AsyncBaseViewSet,
+        excel.ExcelExportMixin,
+        excel.ExcelExportViewSet,
+        excel.DocumentedExcelViewSet,
+        excel_envoy.ScopedExcelViewSet,
         excel.BaseExcelViewSet,
+        excel_aio.AsyncExcelViewSet,
+        org_bootstrap.OrgBootstrapBaseView,
+        org_bootstrap.build_org_bootstrap_view(clone=lambda target_org, **_: {}, teardown=lambda target_org: {}),
     ):
         assert cls.__dict__.get("__doc__") is None, f"{cls.__name__} docstring leaks into OpenAPI descriptions"
