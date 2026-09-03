@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   ci:
-    runs-on: build-only
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
