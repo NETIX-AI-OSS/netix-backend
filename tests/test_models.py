@@ -82,12 +82,14 @@ def test_save_injects_updated_on_into_update_fields():
 
 @pytest.mark.django_db
 def test_subclass_that_also_mutates_update_fields_keeps_both():
-    widget = _make_stale(HistoryWidget.objects.create())
-    widget.payload = "p"
-    widget.change_history = "h"
-    widget.save(update_fields=["payload"])
+    # ChangeHistoryModel appends "change_history" to update_fields after BaseModel appended
+    # "updated_on"; a partial write has to persist both of them plus the caller's own field.
+    widget = _make_stale(HistoryWidget.objects.create(label="before"))
+    widget.label = "after"
+    widget.save(update_fields=["label"])
     widget.refresh_from_db()
-    assert (widget.payload, widget.change_history) == ("p", "h")
+    assert widget.label == "after"
+    assert widget.change_history[-1]["changes"][0]["new"] == "after"
     assert widget.updated_on > STALE
 
 

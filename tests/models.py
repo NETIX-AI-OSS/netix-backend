@@ -5,6 +5,7 @@ from typing import Any
 from django.db import IntegrityError, models
 from rest_framework.exceptions import ValidationError
 
+from netix_backend.django.change_history import ChangeHistoryModel
 from netix_backend.django.models import (
     BaseModel,
     CloneProvenanceMixin,
@@ -32,17 +33,48 @@ class GuardedWidget(BaseModel):
             raise ValidationError("locked")
 
 
-class HistoryWidget(BaseModel):
-    """Subclass that also mutates ``update_fields``, mirroring user-management's ChangeHistoryModel."""
+STATUS_CHOICES = [(1, "PRESENT"), (2, "ABSENT")]
 
-    change_history = models.CharField(max_length=50, blank=True, default="")
+
+class HistoryWidget(BaseModel, ChangeHistoryModel):
+    """The change-trail mixin in the MRO order adopters use: repo base first, mixin second.
+
+    Both bases mutate ``update_fields`` on the way down (``updated_on``, then ``change_history``),
+    which is what tests/test_models.py asserts still composes.
+    """
+
+    label = models.CharField(max_length=50, blank=True, default="")
+    status = models.IntegerField(choices=STATUS_CHOICES, blank=True, null=True)
+    owner = models.ForeignKey(Widget, on_delete=models.CASCADE, blank=True, null=True)
+    # Deliberately outside history_fields: bookkeeping columns must not produce entries.
     payload = models.CharField(max_length=50, blank=True, default="")
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        update_fields = kwargs.get("update_fields")
-        if update_fields is not None:
-            kwargs["update_fields"] = [*update_fields, "change_history"]
-        super().save(*args, **kwargs)
+    history_fields = ("label", "status", "owner", "is_deleted")
+
+
+class CappedHistoryWidget(BaseModel, ChangeHistoryModel):
+    """A trail short enough to overflow in a test."""
+
+    counter = models.IntegerField(default=0)
+
+    history_fields = ("counter",)
+    history_max_entries = 3
+
+
+class UntrackedHistoryWidget(BaseModel, ChangeHistoryModel):
+    """Declares no ``history_fields``, so the mixin stays inert."""
+
+    label = models.CharField(max_length=50, blank=True, default="")
+
+
+class LooseHistoryWidget(BaseModel, ChangeHistoryModel):
+    """``history_fields`` naming a plain attribute, exercising both field-probe fallbacks."""
+
+    label = models.CharField(max_length=50, blank=True, default="")
+    # Not a column: get_field() raises for it, so attname and display both fall back.
+    nickname = "unset"
+
+    history_fields = ("nickname", "label")
 
 
 class LateFailureWidget(BaseModel):
