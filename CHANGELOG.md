@@ -1,5 +1,71 @@
 # Changelog
 
+## v1.4.0 — 2026-09-11
+
+*Why* a change was made, alongside the *what*, *when* and *by whom* v1.3.0 already recorded.
+Ported from `user-management` issue #840, which extended its own copy of the trail while the
+promotion was in flight; only the generic half comes across — re-resolving actor names against a
+repo's own user records stays in the repo that has them.
+
+Backward compatible: every new parameter is optional, `ChangeActor()` still constructs with no
+arguments and `reason` is declared **last** so positional construction keeps its old meaning. A
+consumer that never mentions a reason behaves exactly as it does on v1.3.0 — with one observable
+difference, below.
+
+### Added
+
+- `netix_backend.django.change_history`:
+  - `ChangeActor.reason` (default `""`) and `ChangeActor.from_user(..., reason="")` — free text,
+    stated per write, never inferred.
+  - `reason_context(reason)` — a context manager that folds a reason onto the **already-bound**
+    actor for one write and restores it afterwards. The actor is bound per request; only the
+    reason varies per save, so this replaces rather than rebuilds it.
+  - `actor_context(..., reason="")` for the non-request write paths.
+  - `normalize_reason(value)` — trims, caps at `MAX_REASON_LENGTH`, collapses anything falsy to
+    `""`, so a reason never reaches the trail as `null` or as untrimmed free text.
+  - `reason_from_query(request)` — the reason a body-less write (`DELETE`) states in its query
+    string. Reads `query_params`, falls back to `GET`, tolerates `None`; the request body is
+    deliberately never parsed.
+  - `REASON_FIELD` (`change_reason`) and `MAX_REASON_LENGTH` (`256`).
+- `netix_backend.django.serializers`:
+  - `ChangeHistorySerializerMixin.change_reason` — write-only, not required, blank allowed, capped
+    at `MAX_REASON_LENGTH`. `validate()` pops it onto `self._change_reason` rather than leaving it
+    in `validated_data`, where `ModelSerializer` would hand it to `Model(**validated_data)` and
+    fail on a field the model does not have; `save()` then wraps `super().save()` in
+    `reason_context` when one was stated.
+  - `ChangeHistoryEntrySerializer.reason` — read-only, blank and null both allowed.
+- `netix_backend.django.change_history_schema` — `REASON_PARAMETER`, the ready-made
+  `OpenApiParameter` for a `destroy` action, plus `reason_parameter(description=…, name=…)` and
+  `REASON_DESCRIPTION`, mirroring the `HISTORY_PARAMETER` trio.
+
+### Changed
+
+- **Every entry now carries a `reason` key**, empty when the write stated none. This is the one
+  observable difference for a consumer that never mentions a reason: entries written from v1.4.0
+  on have `"reason": ""` where v1.3.0's had no key at all. Nothing else about the entry moves, no
+  migration is generated, and entries recorded before the key existed stay as they are —
+  `ChangeHistoryEntrySerializer` serves those as `null`, which is how a client tells "no reason
+  was asked for" from "none was given".
+
+### Migration notes
+
+- `user-management` deletes its local `REASON_FIELD`, `MAX_REASON_LENGTH`, `normalize_reason`,
+  `reason_context` and `reason_from_query` from `base/utils/change_history.py`, the `reason` field
+  and the `change_reason` / `validate()` / `save()` block from `base/serializers.py`, and
+  `base/serializers.REASON_PARAMETER`. Re-point the imports:
+  `base.utils.change_history` → `netix_backend.django.change_history`;
+  `base.serializers.REASON_PARAMETER` → `netix_backend.django.change_history_schema`. The
+  `reason` key `ChangeHistoryModel` writes is byte-identical, so no data migration is needed.
+- `staff_management/utils/history_actors.py` and the `ResolvedHistoryActorsMixin` in
+  `staff_management/views.py` stay in `user-management`: they re-resolve trail actors against that
+  repo's own staff records, which the library has no model for.
+- Binding a delete's reason stays the consumer's job, as binding the actor already was:
+  `ChangeActor.from_user(request.user, source=SOURCE_API, reason=reason_from_query(request))` in
+  the viewset's `initial()`, and `extend_schema(parameters=[REASON_PARAMETER])` on `destroy` to
+  advertise it.
+- A serializer whose `Meta.fields` is an explicit list must add `"change_reason"` to it for the
+  field to be accepted; one on `fields = "__all__"` picks the mixin's declared fields up itself.
+
 ## v1.3.0 — 2026-09-11
 
 The on-row change trail, promoted out of `user-management` (issue #815) so `cafm-backend` adopts

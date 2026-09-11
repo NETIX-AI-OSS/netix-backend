@@ -23,7 +23,7 @@ import inspect
 from collections.abc import Callable, Collection, Generator, Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, ClassVar, Self
 
@@ -33,6 +33,8 @@ from django.utils.timezone import now
 
 __all__ = [
     "HISTORY_QUERY_PARAM",
+    "MAX_REASON_LENGTH",
+    "REASON_FIELD",
     "SOURCE_API",
     "SOURCE_MOBILE",
     "SOURCE_SYSTEM",
@@ -45,6 +47,9 @@ __all__ = [
     "get_actor",
     "history_requested",
     "json_safe",
+    "normalize_reason",
+    "reason_context",
+    "reason_from_query",
     "reset_actor",
     "set_actor",
 ]
@@ -60,6 +65,23 @@ TRUTHY_PARAM_VALUES = frozenset({"1", "true", "yes", "on"})
 # Query parameter that opts a response into carrying ``change_history``.
 HISTORY_QUERY_PARAM = "include_history"
 
+# Payload/query field carrying the caller's stated reason for a write.
+REASON_FIELD = "change_reason"
+
+# Kept in step with the column widths a reason is rendered beside (a ``remarks`` column is 256).
+MAX_REASON_LENGTH = 256
+
+
+def normalize_reason(reason: Any) -> str:
+    """Trim and cap a caller-supplied reason; anything falsy becomes the empty string.
+
+    Deliberately total: ``None``, an empty string and a whitespace-only one all collapse to ``""``,
+    so a reason never reaches the trail as ``null`` or as untrimmed free text.
+    """
+    if not reason:
+        return ""
+    return str(reason).strip()[:MAX_REASON_LENGTH]
+
 
 @dataclass(frozen=True)
 class ChangeActor:
@@ -68,9 +90,12 @@ class ChangeActor:
     user_id: int | None = None
     name: str = ""
     source: str = SOURCE_SYSTEM
+    # Why the change was made, when the caller stated one. Free text, supplied per write, never
+    # inferred. Declared last so positional construction stays compatible with earlier releases.
+    reason: str = ""
 
     @classmethod
-    def from_user(cls, user: Any, source: str = SOURCE_API) -> ChangeActor:
+    def from_user(cls, user: Any, source: str = SOURCE_API, reason: str = "") -> ChangeActor:
         """Build an actor from any user-shaped object: ``pk``, ``get_full_name()``, ``username``.
 
         Duck-typed on purpose — a Django ``AbstractUser``, a repo's own ``OrganizationUser`` and an
@@ -86,7 +111,7 @@ class ChangeActor:
             name = str(get_full_name() or "").strip()
         if not name:
             name = str(getattr(user, "username", "") or "")
-        return cls(user_id=user_id, name=name, source=source)
+        return cls(user_id=user_id, name=name, source=source, reason=normalize_reason(reason))
 
 
 _current_actor: ContextVar[ChangeActor | None] = ContextVar("change_history_actor", default=None)
@@ -115,18 +140,55 @@ def reset_actor(token: Token[ChangeActor | None] | None = None) -> None:
 
 
 @contextmanager
-def actor_context(user: Any = None, source: str = SOURCE_SYSTEM) -> Generator[ChangeActor]:
+def actor_context(user: Any = None, source: str = SOURCE_SYSTEM, reason: str = "") -> Generator[ChangeActor]:
     """Bind an actor for the duration of a block — the non-request write paths.
 
     Sheet imports, management commands and Celery tasks have no request to hang the actor off, so
     they wrap the write instead: ``with actor_context(submitter, source=SOURCE_UPLOAD):``.
     """
-    actor = ChangeActor.from_user(user, source=source) if user is not None else ChangeActor(source=source)
+    actor = (
+        ChangeActor.from_user(user, source=source, reason=reason)
+        if user is not None
+        else ChangeActor(source=source, reason=normalize_reason(reason))
+    )
     token = set_actor(actor)
     try:
         yield actor
     finally:
         reset_actor(token)
+
+
+@contextmanager
+def reason_context(reason: str) -> Generator[ChangeActor]:
+    """Attach ``reason`` to the already-bound actor for one write, then restore it.
+
+    The actor itself is bound per request; only the reason varies per save, so this replaces the
+    bound actor rather than rebuilding it — whoever is acting stays whoever the request said.
+    Yields the actor as it was before the swap, the way :func:`actor_context` yields the one it bound.
+    """
+    actor = get_actor()
+    token = set_actor(replace(actor, reason=normalize_reason(reason)))
+    try:
+        yield actor
+    finally:
+        reset_actor(token)
+
+
+def reason_from_query(request: Any) -> str:
+    """The reason stated in the query string, for writes that carry no body (``DELETE``).
+
+    Body-carrying writes pass it as the ``change_reason`` field instead, so the request body is
+    deliberately not parsed here. Reads DRF's ``query_params`` when present and falls back to
+    Django's ``GET``, the same way :func:`history_requested` does.
+    """
+    if request is None:
+        return ""
+    query_params = getattr(request, "query_params", None)
+    if query_params is None:
+        query_params = getattr(request, "GET", None)
+    if query_params is None:
+        return ""
+    return normalize_reason(query_params.get(REASON_FIELD))
 
 
 def history_requested(request: Any) -> bool:
@@ -319,6 +381,10 @@ class ChangeHistoryModel(models.Model):
             "source": actor.source,
             "by": actor.user_id,
             "by_name": actor.name,
+            # Always written, empty when nobody stated one, so every entry read back has the same
+            # shape. Entries recorded before the field existed have no key at all and are served
+            # as null by ``ChangeHistoryEntrySerializer``.
+            "reason": actor.reason,
             "changes": changes,
         }
 

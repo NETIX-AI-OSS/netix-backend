@@ -61,7 +61,9 @@ class GuardedWidgetSerializer(serializers.ModelSerializer):
 class HistoryWidgetSerializer(ChangeHistorySerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = HistoryWidget
-        fields = ["id", "label", "status", "change_history"]
+        # change_reason is listed because this Meta names its fields explicitly; a serializer on
+        # ``fields = "__all__"`` picks the mixin's declared fields up on its own.
+        fields = ["id", "label", "status", "change_history", "change_reason"]
 
 
 class BoomFilterBackend:
