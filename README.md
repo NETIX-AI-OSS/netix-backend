@@ -37,8 +37,8 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec` — the two-phase test-settings bootstrap |
 | `prospector_profile_netix` | the shared prospector profile: `inherits: [netix]` (or `[netix:django]`) in a repo's prospector.yaml |
 | `netix_backend.django.models` | `BaseModel`, `NamedBaseModel`, `SluggedNamedBaseModel`, `CompactNamedBaseModel`, `BaseManager`, `CloneProvenanceMixin`, `organization_scoped()` |
-| `netix_backend.django.change_history` | `ChangeHistoryModel`, `ChangeActor`, `ChangeHistoryActorMiddleware`, `actor_context` / `get_actor` / `set_actor` / `reset_actor`, `history_requested`, `json_safe`, the `SOURCE_*` constants — the on-row audit trail, runtime only |
-| `netix_backend.django.change_history_schema` | `HISTORY_PARAMETER`, `history_parameter()`, `HISTORY_DESCRIPTION` (requires the `spectacular` extra) |
+| `netix_backend.django.change_history` | `ChangeHistoryModel`, `ChangeActor`, `ChangeHistoryActorMiddleware`, `actor_context` / `get_actor` / `set_actor` / `reset_actor`, `reason_context` / `reason_from_query` / `normalize_reason`, `history_requested`, `json_safe`, the `SOURCE_*` constants — the on-row audit trail, runtime only |
+| `netix_backend.django.change_history_schema` | `HISTORY_PARAMETER`, `history_parameter()`, `HISTORY_DESCRIPTION`, `REASON_PARAMETER`, `reason_parameter()`, `REASON_DESCRIPTION` (requires the `spectacular` extra) |
 | `netix_backend.django.views` | `BaseViewSet` and its mixins (scoping, tenant write pinning, atomic writes, soft delete, permissions); `include_deleted_schema()` needs the `spectacular` extra |
 | `netix_backend.django.views_aio` | `AsyncBaseViewSet` (requires the `async` extra) |
 | `netix_backend.django.exceptions` | `custom_exception_handler` + message flatteners, behind `NETIX_ERRORS_*` settings |
@@ -315,7 +315,7 @@ from netix_backend.django.serializers import ChangeHistorySerializerMixin
 class AttendanceSerializer(ChangeHistorySerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = Attendance
-        fields = base_fields("status", "remarks", "change_history")
+        fields = base_fields("status", "remarks", "change_history", "change_reason")
 ```
 
 Every save diffs `history_fields` against the values the row was loaded with and appends one
@@ -323,6 +323,29 @@ Every save diffs `history_fields` against the values the row was loaded with and
 `history_max_entries`, default 50). The field is serialized only for a request carrying
 `?include_history=true`; advertise it with
 `extend_schema(parameters=[HISTORY_PARAMETER])` from `change_history_schema`.
+
+### Why the change was made
+
+The mixin also accepts a write-only `change_reason` (capped at `MAX_REASON_LENGTH`), folded onto
+the actor for that one save so it lands as `reason` on the entry the write produces. It is never a
+model field — the mixin pops it before `validated_data` reaches the model. An explicit
+`Meta.fields` list has to name it; `fields = "__all__"` picks it up on its own.
+
+A delete carries no body, so its reason arrives as a query parameter instead:
+
+```python
+# the viewset, where the actor is bound anyway
+reason = reason_from_query(request) if request.method == "DELETE" else ""
+set_actor(ChangeActor.from_user(request.user, source=SOURCE_API, reason=reason))
+
+
+# and the advertising for it
+@extend_schema_view(destroy=extend_schema(parameters=[REASON_PARAMETER]))
+class AttendanceViewSet(BaseViewSet): ...
+```
+
+`reason` is written on every entry, empty when none was stated; entries recorded before the field
+existed carry no key at all and are served as `null`.
 
 Who the actor is stays the adopter's decision. `ChangeHistoryActorMiddleware` only *resets* the
 binding around each request (sync and async); bind it from wherever the identity actually resolves:

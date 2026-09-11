@@ -4,7 +4,12 @@ from typing import Any, Final
 
 from rest_framework import serializers
 
-from netix_backend.django.change_history import history_requested
+from netix_backend.django.change_history import (
+    MAX_REASON_LENGTH,
+    REASON_FIELD,
+    history_requested,
+    reason_context,
+)
 
 __all__ = [
     "BASE_FIELDS",
@@ -61,11 +66,14 @@ class ChangeHistoryEntrySerializer(serializers.Serializer):  # pylint: disable=a
     )
     by = serializers.IntegerField(read_only=True, allow_null=True, help_text="Acting user id, null for system")
     by_name = serializers.CharField(read_only=True, allow_blank=True)
+    # Why the change was made — empty when the write stated none, and null on entries recorded
+    # before the field existed.
+    reason = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
     changes = ChangeHistoryChangeSerializer(many=True, read_only=True)
 
 
 class ChangeHistorySerializerMixin(serializers.Serializer):  # pylint: disable=abstract-method
-    """Carry ``change_history`` only when the caller asked for it.
+    """Carry ``change_history`` only when the caller asked for it, and record a stated reason.
 
     Mix in ahead of ``ModelSerializer`` on any serializer whose model uses
     :class:`netix_backend.django.change_history.ChangeHistoryModel`; the field is dropped for every
@@ -73,6 +81,18 @@ class ChangeHistorySerializerMixin(serializers.Serializer):  # pylint: disable=a
     """
 
     change_history = ChangeHistoryEntrySerializer(many=True, read_only=True)
+    # Write-only, never a model field — popped in validate() and folded onto the actor for the
+    # save, so it lands on the trail entry the write produces.
+    change_reason = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        max_length=MAX_REASON_LENGTH,
+        help_text=(
+            "Why this change is being made. Recorded as `reason` on the change_history entry "
+            "this write produces; not stored as a field of its own."
+        ),
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -82,6 +102,21 @@ class ChangeHistorySerializerMixin(serializers.Serializer):  # pylint: disable=a
             return
         if not history_requested(self.context.get("request")):
             self.fields.pop("change_history", None)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        # Held on the serializer, not left in validated_data: ModelSerializer would otherwise hand
+        # it to Model(**validated_data) and fail on a field the model does not have.
+        self._change_reason = attrs.pop(REASON_FIELD, "")
+        return attrs
+
+    def save(self, **kwargs: Any) -> Any:
+        # getattr, not self._change_reason: save() is reachable without validate() having run.
+        reason = getattr(self, "_change_reason", "")
+        if not reason:
+            return super().save(**kwargs)
+        with reason_context(reason):
+            return super().save(**kwargs)
 
     def to_representation(self, instance: Any) -> dict[str, Any]:
         data = super().to_representation(instance)

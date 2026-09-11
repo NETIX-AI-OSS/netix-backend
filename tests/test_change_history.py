@@ -16,6 +16,8 @@ from rest_framework.test import APIClient, APIRequestFactory
 
 from netix_backend.django.change_history import (
     HISTORY_QUERY_PARAM,
+    MAX_REASON_LENGTH,
+    REASON_FIELD,
     SOURCE_API,
     SOURCE_MOBILE,
     SOURCE_SYSTEM,
@@ -27,13 +29,19 @@ from netix_backend.django.change_history import (
     get_actor,
     history_requested,
     json_safe,
+    normalize_reason,
+    reason_context,
+    reason_from_query,
     reset_actor,
     set_actor,
 )
 from netix_backend.django.change_history_schema import (
     HISTORY_DESCRIPTION,
     HISTORY_PARAMETER,
+    REASON_DESCRIPTION,
+    REASON_PARAMETER,
     history_parameter,
+    reason_parameter,
 )
 from netix_backend.django.serializers import (
     ChangeHistoryChangeSerializer,
@@ -135,6 +143,36 @@ class TestChangeActor:
     def test_the_bare_actor_is_the_anonymous_system_one(self):
         assert ChangeActor() == ChangeActor(user_id=None, name="", source=SOURCE_SYSTEM)
 
+    def test_the_bare_actor_states_no_reason(self):
+        assert ChangeActor().reason == ""
+
+    def test_positional_construction_still_means_what_it_did_before_the_reason_field(self):
+        # reason is declared last precisely so a consumer pinned to an earlier release keeps working.
+        assert ChangeActor(7, "Rajan Khan", SOURCE_API) == ChangeActor(
+            user_id=7, name="Rajan Khan", source=SOURCE_API, reason=""
+        )
+
+    def test_a_stated_reason_is_normalized_onto_the_actor(self):
+        assert ChangeActor.from_user(Person(), reason="  roster swap  ").reason == "roster swap"
+
+    def test_a_user_shaped_object_with_no_stated_reason_states_none(self):
+        assert ChangeActor.from_user(Person()).reason == ""
+
+
+class TestNormalizeReason:
+    @pytest.mark.parametrize("raw", [None, "", "   ", 0, False, []])
+    def test_anything_falsy_or_blank_collapses_to_the_empty_string(self, raw):
+        assert normalize_reason(raw) == ""
+
+    def test_surrounding_whitespace_is_trimmed(self):
+        assert normalize_reason("  roster swap  ") == "roster swap"
+
+    def test_a_reason_past_the_cap_is_truncated(self):
+        assert normalize_reason("x" * (MAX_REASON_LENGTH + 50)) == "x" * MAX_REASON_LENGTH
+
+    def test_a_non_string_is_coerced_rather_than_refused(self):
+        assert normalize_reason(42) == "42"
+
 
 class TestActorBinding:
     def test_nothing_bound_reads_as_an_anonymous_system_actor(self):
@@ -177,6 +215,59 @@ class TestActorBinding:
         with actor_context(Person(), source=SOURCE_UPLOAD):
             pass
         assert get_actor().user_id == 1
+
+    def test_actor_context_carries_a_stated_reason_for_a_user(self):
+        with actor_context(Person(), source=SOURCE_UPLOAD, reason="  sheet correction  ") as actor:
+            assert actor.reason == "sheet correction"
+
+    def test_actor_context_without_a_user_carries_a_stated_reason_too(self):
+        with actor_context(source=SOURCE_MOBILE, reason="  nightly sweep  ") as actor:
+            assert actor == ChangeActor(source=SOURCE_MOBILE, reason="nightly sweep")
+
+
+class TestReasonContext:
+    def test_the_reason_is_folded_onto_the_bound_actor_and_then_restored(self):
+        # The actor is bound per request; only the reason varies per save.
+        set_actor(ChangeActor(user_id=7, name="Rajan Khan", source=SOURCE_API))
+
+        with reason_context("  roster swap  ") as before:
+            assert before == ChangeActor(user_id=7, name="Rajan Khan", source=SOURCE_API)
+            assert get_actor() == ChangeActor(user_id=7, name="Rajan Khan", source=SOURCE_API, reason="roster swap")
+
+        assert get_actor() == ChangeActor(user_id=7, name="Rajan Khan", source=SOURCE_API)
+
+    def test_with_nobody_bound_the_reason_still_lands_on_the_anonymous_actor(self):
+        with reason_context("system sweep"):
+            assert get_actor() == ChangeActor(reason="system sweep")
+
+        assert get_actor() == ChangeActor()
+
+    def test_the_previous_reason_is_restored_even_when_the_block_raises(self):
+        set_actor(ChangeActor(user_id=7, source=SOURCE_API, reason="original"))
+
+        with pytest.raises(RuntimeError), reason_context("replacement"):
+            raise RuntimeError("boom")
+
+        assert get_actor().reason == "original"
+
+
+class TestReasonFromQuery:
+    def test_a_drf_request_states_it_through_query_params(self):
+        request = Request(APIRequestFactory().get("/", {REASON_FIELD: "  roster swap  "}))
+        assert reason_from_query(request) == "roster swap"
+
+    def test_a_plain_django_request_is_read_through_its_get_dict(self):
+        # A DELETE carries no body, so the query string is the only place a reason can arrive.
+        assert reason_from_query(RequestFactory().delete(f"/?{REASON_FIELD}=typo")) == "typo"
+
+    def test_an_absent_parameter_is_no_reason(self):
+        assert reason_from_query(Request(APIRequestFactory().get("/"))) == ""
+
+    def test_no_request_at_all_is_no_reason(self):
+        assert reason_from_query(None) == ""
+
+    def test_an_object_carrying_neither_accessor_is_no_reason(self):
+        assert reason_from_query(object()) == ""
 
 
 class TestHistoryRequested:
@@ -350,6 +441,26 @@ class TestRecording:
         entry = widget.change_history[-1]
         assert (entry["by"], entry["by_name"], entry["source"]) == (7, "Rajan Khan", SOURCE_API)
 
+    def test_an_entry_carries_an_empty_reason_when_nobody_stated_one(self):
+        widget = HistoryWidget.objects.create(label="before")
+
+        assert widget.change_history[-1]["reason"] == ""
+
+    def test_a_create_records_the_reason_the_actor_carries(self):
+        with actor_context(Person(), source=SOURCE_API, reason="new joiner"):
+            widget = HistoryWidget.objects.create(label="before")
+
+        assert widget.change_history[-1]["reason"] == "new joiner"
+
+    def test_an_update_records_the_reason_stated_for_that_one_save(self):
+        widget = HistoryWidget.objects.create(label="before")
+
+        with reason_context("roster swap"):
+            widget.label = "after"
+            widget.save()
+
+        assert [entry["reason"] for entry in widget.change_history] == ["", "roster swap"]
+
     def test_a_model_without_history_fields_never_records(self):
         widget = UntrackedHistoryWidget.objects.create(label="before")
 
@@ -499,9 +610,53 @@ class TestSerializerMixin:
 
         data = ChangeHistoryEntrySerializer(widget.change_history, many=True).data
 
-        assert set(data[0]) == {"at", "action", "source", "by", "by_name", "changes"}
+        assert set(data[0]) == {"at", "action", "source", "by", "by_name", "reason", "changes"}
         assert data[0]["source"] == SOURCE_SYSTEM
         assert set(ChangeHistoryChangeSerializer().fields) == {"field", "old", "new", "old_display", "new_display"}
+
+    def test_an_entry_recorded_before_the_field_existed_reads_back_as_null(self):
+        legacy = {
+            "at": "2026-01-01T00:00:00+00:00",
+            "action": "updated",
+            "source": SOURCE_API,
+            "by": 7,
+            "by_name": "Rajan Khan",
+            "changes": [],
+        }
+
+        assert ChangeHistoryEntrySerializer([legacy], many=True).data[0]["reason"] is None
+
+    def test_a_stated_reason_lands_on_the_entry_the_write_produces(self):
+        serializer = HistoryWidgetSerializer(data={"label": "before", "change_reason": "  roster swap  "})
+        assert serializer.is_valid(), serializer.errors
+        # Never in validated_data: ModelSerializer would hand it to HistoryWidget(**validated_data).
+        assert REASON_FIELD not in serializer.validated_data
+
+        widget = serializer.save()
+
+        assert widget.change_history[-1]["reason"] == "roster swap"
+        # Write-only, so it is never echoed back.
+        assert REASON_FIELD not in serializer.data
+
+    def test_a_write_stating_no_reason_saves_exactly_as_it_did_before(self):
+        serializer = HistoryWidgetSerializer(data={"label": "before"})
+        assert serializer.is_valid(), serializer.errors
+
+        widget = serializer.save()
+
+        assert widget.change_history[-1]["reason"] == ""
+
+    def test_a_blank_reason_is_accepted_and_recorded_as_none_stated(self):
+        serializer = HistoryWidgetSerializer(data={"label": "before", "change_reason": ""})
+        assert serializer.is_valid(), serializer.errors
+
+        assert serializer.save().change_history[-1]["reason"] == ""
+
+    def test_a_reason_past_the_cap_is_refused_rather_than_silently_truncated(self):
+        serializer = HistoryWidgetSerializer(data={"label": "before", "change_reason": "x" * (MAX_REASON_LENGTH + 1)})
+
+        assert serializer.is_valid() is False
+        assert REASON_FIELD in serializer.errors
 
 
 @pytest.mark.django_db
@@ -541,6 +696,19 @@ class TestThroughTheApi:
         assert response.status_code == 200
         assert [entry["action"] for entry in response.json()["change_history"]] == ["created", "updated"]
 
+    def test_an_api_edit_records_the_reason_the_caller_stated(self):
+        widget = HistoryWidget.objects.create(label="before")
+
+        response = APIClient().patch(
+            f"{HISTORY_URL}{widget.pk}/?{HISTORY_QUERY_PARAM}=true",
+            {"label": "after", "change_reason": "roster swap"},
+            format="json",
+        )
+
+        payload = response.json()
+        assert [entry["reason"] for entry in payload["change_history"]] == ["", "roster swap"]
+        assert "change_reason" not in payload
+
 
 class TestSchemaParameter:
     def test_the_ready_made_parameter_advertises_the_query_flag(self):
@@ -553,3 +721,16 @@ class TestSchemaParameter:
         parameter = history_parameter(description="Include the audit trail.", name="with_history")
 
         assert (parameter.name, parameter.description) == ("with_history", "Include the audit trail.")
+
+
+class TestReasonParameter:
+    def test_the_ready_made_parameter_advertises_the_body_less_reason(self):
+        assert REASON_PARAMETER.name == REASON_FIELD
+        assert REASON_PARAMETER.location == "query"
+        assert REASON_PARAMETER.required is False
+        assert REASON_PARAMETER.description == REASON_DESCRIPTION
+
+    def test_an_adopter_can_supply_its_own_prose_and_parameter_name(self):
+        parameter = reason_parameter(description="Why this is going away.", name="why")
+
+        assert (parameter.name, parameter.description) == ("why", "Why this is going away.")
