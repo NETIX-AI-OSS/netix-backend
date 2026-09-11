@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 
 from adrf import routers as adrf_routers
 from django.urls import include, path
-from rest_framework import routers, serializers
+from rest_framework import routers, serializers, viewsets
 
 from netix_backend.django.excel import BaseExcelViewSet, ExcelExportViewSet
 from netix_backend.django.excel_aio import AsyncExcelViewSet
@@ -14,6 +14,7 @@ from netix_backend.django.org_scope_schema import (
     superuser_org_scope_autoschema,
     superuser_org_scope_schema,
 )
+from netix_backend.django.serializers import ChangeHistorySerializerMixin
 from netix_backend.django.views import (
     BaseViewSet,
     CreateListModelMixin,
@@ -25,7 +26,7 @@ from netix_backend.django.views import (
     include_deleted_schema,
 )
 from netix_backend.django.views_aio import AsyncBaseViewSet
-from tests.models import GuardedWidget, PlainWidget, ScopedWidget
+from tests.models import GuardedWidget, HistoryWidget, PlainWidget, ScopedWidget
 
 
 class EnvoyHeaderMixin:
@@ -55,6 +56,12 @@ class GuardedWidgetSerializer(serializers.ModelSerializer):
     class Meta:
         model = GuardedWidget
         fields = ["id", "locked", "is_deleted"]
+
+
+class HistoryWidgetSerializer(ChangeHistorySerializerMixin, serializers.ModelSerializer):
+    class Meta:
+        model = HistoryWidget
+        fields = ["id", "label", "status", "change_history"]
 
 
 class BoomFilterBackend:
@@ -241,6 +248,14 @@ class AsyncUnpinnedViewSet(AsyncWidgetViewSet):
     tenant_write_scope = "off"
 
 
+class HistoryWidgetViewSet(viewsets.ModelViewSet):
+    """A plain DRF viewset: the change trail is serializer-driven and owes nothing to BaseViewSet."""
+
+    serializer_class = HistoryWidgetSerializer
+    queryset = HistoryWidget.objects.all()
+    permission_classes: ClassVar[list[Any]] = []
+
+
 router = routers.SimpleRouter()
 router.register("widgets", WidgetViewSet, basename="widget")
 router.register("pin-reject", PinRejectViewSet, basename="pin-reject")
@@ -267,6 +282,7 @@ router.register("owned-exempt", OwnershipExemptViewSet, basename="owned-exempt")
 router.register("gated", PermissionViewSet, basename="gated")
 router.register("excel", ExcelWidgetViewSet, basename="excel")
 router.register("excel-unscoped", UnscopedExcelViewSet, basename="excel-unscoped")
+router.register("history-widgets", HistoryWidgetViewSet, basename="history-widget")
 
 async_router = adrf_routers.SimpleRouter()
 async_router.register("async-widgets", AsyncWidgetViewSet, basename="async-widget")

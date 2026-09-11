@@ -1,5 +1,64 @@
 # Changelog
 
+## v1.3.0 — 2026-09-11
+
+The on-row change trail, promoted out of `user-management` (issue #815) so `cafm-backend` adopts
+one implementation instead of a second fork. Behavior-preserving: this is the `user-management`
+code, and the entries it writes are byte-identical. The one addition is a documented
+`resolve_actor()` hook, so a repo that binds its actor somewhere other than `request.user`
+subclasses the middleware rather than forking it.
+
+### Added
+
+- `netix_backend.django.change_history` — runtime only, no drf-spectacular import anywhere, so a
+  repo without the `spectacular` extra can still mix the model in:
+  - `ChangeHistoryModel`, an abstract mixin carrying a `change_history` JSONField. Declare
+    `history_fields` (nothing is recorded while it is empty) and every save diffs those fields
+    against the values the row was loaded with, appending one `created` / `updated` / `deleted` /
+    `restored` entry. `from_db` takes the baseline snapshot at load time so the diff costs no extra
+    query, `refresh_from_db` re-baselines it, a partial `update_fields` write records only what it
+    actually persists (the rest stays pending for the save that does write it), choice fields carry
+    `old_display` / `new_display`, and `history_max_entries` (default 50) caps the trail.
+  - `ChangeActor` + the `contextvars` binding (`get_actor`, `set_actor`, `reset_actor`,
+    `actor_context`). `ChangeActor.from_user()` is duck-typed on `pk` / `get_full_name()` /
+    `username` — nothing here imports `django.contrib.auth`, and a non-integer `pk` degrades to
+    `user_id=None` rather than writing an unqueryable id into the trail.
+  - `ChangeHistoryActorMiddleware` (sync + async), which **resets** the actor around each request
+    and binds nobody by default. Overriding `resolve_actor(request) -> ChangeActor | None` is the
+    supported way to bind from something the middleware layer can already see (an Envoy identity);
+    with no override its behaviour is exactly user-management's of today.
+  - `json_safe()`, `history_requested()`, `HISTORY_QUERY_PARAM` (`include_history`),
+    `TRUTHY_PARAM_VALUES`, and the `SOURCE_API` / `SOURCE_UPLOAD` / `SOURCE_SYSTEM` /
+    `SOURCE_MOBILE` constants.
+- `netix_backend.django.serializers` gained `ChangeHistorySerializerMixin`,
+  `ChangeHistoryEntrySerializer` and `ChangeHistoryChangeSerializer`. The mixin drops
+  `change_history` in `__init__` (not after `to_representation`, which would serialize the whole
+  trail and then throw it away) for any request that did not pass `?include_history=true`, and
+  keeps the field declared for schema generation (`swagger_fake_view`).
+- `netix_backend.django.change_history_schema` — `HISTORY_PARAMETER` (the ready-made
+  `OpenApiParameter`, same prose as today), `history_parameter(description=…, name=…)` for a repo
+  that wants its own, and `HISTORY_DESCRIPTION`. Split from the runtime module for the same reason
+  `org_scope_schema` is split from `org_scope`: drf-spectacular stays optional.
+
+### Migration notes
+
+- Adopting repos delete `base/models.py`'s `ChangeHistoryModel` + `json_safe`,
+  `base/utils/change_history.py`, `base/middleware/change_history.py` and the change-history block
+  of `base/serializers.py`, then re-point their imports:
+  `base.utils.change_history` → `netix_backend.django.change_history`;
+  `base.serializers` (`ChangeHistorySerializerMixin`) → `netix_backend.django.serializers`;
+  `base.serializers.HISTORY_PARAMETER` → `netix_backend.django.change_history_schema`. The
+  `MIDDLEWARE` entry becomes
+  `netix_backend.django.change_history.ChangeHistoryActorMiddleware`. No migration is generated:
+  the column, its default and its `help_text` are unchanged.
+- **Binding the actor is now explicitly the consumer's job**, because it always was: the
+  middleware never bound one. user-management keeps binding from `request.user` in its
+  `BaseViewSet.initial()`; a repo behind Envoy with no Django user subclasses the middleware and
+  overrides `resolve_actor()` instead of rewriting it.
+- `ChangeHistoryEntrySerializer.by`'s help text now reads "Acting user id" rather than naming
+  `OrganizationUser`, since the library has no such model. It is prose in the generated schema
+  only; regenerate the OpenAPI contract when adopting.
+
 ## v1.2.0 — 2026-08-25
 
 Third wave: the Tier-1/Tier-3 reuse candidates, verified by a six-survey research pass over the

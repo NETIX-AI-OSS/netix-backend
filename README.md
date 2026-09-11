@@ -37,11 +37,13 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec` — the two-phase test-settings bootstrap |
 | `prospector_profile_netix` | the shared prospector profile: `inherits: [netix]` (or `[netix:django]`) in a repo's prospector.yaml |
 | `netix_backend.django.models` | `BaseModel`, `NamedBaseModel`, `SluggedNamedBaseModel`, `CompactNamedBaseModel`, `BaseManager`, `CloneProvenanceMixin`, `organization_scoped()` |
+| `netix_backend.django.change_history` | `ChangeHistoryModel`, `ChangeActor`, `ChangeHistoryActorMiddleware`, `actor_context` / `get_actor` / `set_actor` / `reset_actor`, `history_requested`, `json_safe`, the `SOURCE_*` constants — the on-row audit trail, runtime only |
+| `netix_backend.django.change_history_schema` | `HISTORY_PARAMETER`, `history_parameter()`, `HISTORY_DESCRIPTION` (requires the `spectacular` extra) |
 | `netix_backend.django.views` | `BaseViewSet` and its mixins (scoping, tenant write pinning, atomic writes, soft delete, permissions); `include_deleted_schema()` needs the `spectacular` extra |
 | `netix_backend.django.views_aio` | `AsyncBaseViewSet` (requires the `async` extra) |
 | `netix_backend.django.exceptions` | `custom_exception_handler` + message flatteners, behind `NETIX_ERRORS_*` settings |
 | `netix_backend.django.pagination` | `limit_offset_pagination()` factory, `BaseLimitOffsetPagination`, `BigLimitOffsetPagination` |
-| `netix_backend.django.serializers` | `BASE_FIELDS`, `NAMED_BASE_FIELDS`, `NamedBaseSerializer` |
+| `netix_backend.django.serializers` | `BASE_FIELDS`, `NAMED_BASE_FIELDS`, `NamedBaseSerializer`, `ChangeHistorySerializerMixin`, `ChangeHistoryEntrySerializer`, `ChangeHistoryChangeSerializer` |
 | `netix_backend.django.filters` | `CharArrayFilter`, `CharInFilter`, `NumberInFilter`, `IntArrayFilter`, `NumberArrayFilter`, `BASE_FILTERS` (requires the `spectacular` extra) |
 | `netix_backend.django.schema` | `AsyncActionAutoSchema`, `XlsxExportAutoSchema`, `XLSX_BINARY_RESPONSE` (requires the `spectacular` extra) |
 | `netix_backend.django.excel` | envoy-free export core: style presets, `ExcelExportViewSet`, `DocumentedExcelViewSet` (requires the `excel` extra) |
@@ -293,6 +295,53 @@ class OrganizationConfigViewSet(SuperuserOrgScopeMixin, BaseViewSet):
 
 The mixin is runtime-only. OpenAPI advertising stays in the repo through one of the four
 helpers — `description` is required, so the published contract text never moves silently.
+
+## Change history
+
+```python
+# service/models.py — the mixin sits alongside the repo's own base
+from netix_backend.django.change_history import ChangeHistoryModel
+from netix_backend.django.models import BaseModel
+
+
+class Attendance(BaseModel, ChangeHistoryModel):
+    history_fields = ("status", "check_in_time", "remarks", "is_deleted")
+
+
+# service/serializers.py
+from netix_backend.django.serializers import ChangeHistorySerializerMixin
+
+
+class AttendanceSerializer(ChangeHistorySerializerMixin, serializers.ModelSerializer):
+    class Meta:
+        model = Attendance
+        fields = base_fields("status", "remarks", "change_history")
+```
+
+Every save diffs `history_fields` against the values the row was loaded with and appends one
+`created` / `updated` / `deleted` / `restored` entry to a `change_history` JSON column (capped at
+`history_max_entries`, default 50). The field is serialized only for a request carrying
+`?include_history=true`; advertise it with
+`extend_schema(parameters=[HISTORY_PARAMETER])` from `change_history_schema`.
+
+Who the actor is stays the adopter's decision. `ChangeHistoryActorMiddleware` only *resets* the
+binding around each request (sync and async); bind it from wherever the identity actually resolves:
+
+```python
+# a viewset, once DRF authentication has run
+def initial(self, request, *args, **kwargs):
+    super().initial(request, *args, **kwargs)
+    self._token = set_actor(ChangeActor.from_user(request.user, source=SOURCE_API))
+
+
+# or in the middleware, for a repo whose identity arrives on the request itself
+class EnvoyActorMiddleware(ChangeHistoryActorMiddleware):
+    def resolve_actor(self, request) -> ChangeActor | None:
+        return ChangeActor(user_id=request.envoy["user_id"], source=SOURCE_API)
+```
+
+Non-request writes (sheet imports, commands, tasks) wrap instead:
+`with actor_context(submitter, source=SOURCE_UPLOAD): ...`.
 
 ## Shared lint profile
 
