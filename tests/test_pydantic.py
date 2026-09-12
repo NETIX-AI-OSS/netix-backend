@@ -279,6 +279,10 @@ def test_explicit_input_model_normalizes_defaults_then_keeps_drf_fields_and_hook
     assert not drf_hook.is_valid()
     assert "name" in drf_hook.errors
 
+    boolean_integer = ExplicitInputSerializer(data={"name": "item", "count": True})
+    assert not boolean_integer.is_valid()
+    assert boolean_integer.errors["count"][0].code == "invalid"
+
 
 def test_explicit_input_errors_have_drf_field_keys_and_pydantic_codes():
     serializer = ExplicitInputSerializer(data={"name": "x"})

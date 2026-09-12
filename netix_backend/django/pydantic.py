@@ -306,16 +306,9 @@ class PydanticInputMixin:
                     if value is not drf_fields.empty:
                         pydantic_data[name] = value
         try:
-            parsed = model.model_validate(pydantic_data)
+            model.model_validate(pydantic_data)
         except PydanticValidationError as exc:
             raise ValidationError(_drf_errors(exc)) from exc
-
-        values = parsed.model_dump(mode="python", by_alias=True, exclude_unset=True)
-        if isinstance(data, MultiValueDict):
-            normalized = data.copy()
-            for key, value in values.items():
-                normalized.setlist(key, value if isinstance(value, list) else [value])
-        else:
-            normalized = dict(data)
-            normalized.update(values)
-        return super().to_internal_value(normalized)  # type: ignore[misc]
+        # Pydantic proves the explicit contract; DRF still owns accepted input types,
+        # relation authorization, defaults, custom fields, and persistence values.
+        return super().to_internal_value(data)  # type: ignore[misc]
