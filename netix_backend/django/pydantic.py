@@ -211,7 +211,7 @@ class PydanticReadMixin:
     @classmethod
     def many_init(cls, *args: Any, **kwargs: Any) -> ListSerializer:
         """Use batching unless the serializer declares a custom list serializer."""
-        result = super().many_init(*args, **kwargs)  # type: ignore[misc]
+        result = cast(ListSerializer, super().many_init(*args, **kwargs))  # type: ignore[misc]
         result_type = type(result)
         if result_type.to_representation is not ListSerializer.to_representation:
             return result
@@ -247,9 +247,9 @@ class PydanticReadMixin:
 
     def to_representation(self, instance: Any) -> dict[str, Any]:
         if not type(self).pydantic_read:
-            return super().to_representation(instance)  # type: ignore[misc]
+            return cast(dict[str, Any], super().to_representation(instance))  # type: ignore[misc]
         if not self._can_batch_representation():
-            return super().to_representation(instance)  # type: ignore[misc]
+            return cast(dict[str, Any], super().to_representation(instance))  # type: ignore[misc]
         return self.dump_many([instance])[0]
 
 
