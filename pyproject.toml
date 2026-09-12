@@ -23,6 +23,7 @@ dependencies = [
     "djangorestframework>=3.16.1,<4",
     "django-filter>=24.3",
     "httpx>=0.28,<0.29",
+    "pydantic>=2.10,<3",
     "envoy-pyauth>=2.0.0",
 ]
 
