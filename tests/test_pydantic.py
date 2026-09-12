@@ -16,6 +16,7 @@ from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rest_framework import serializers
 
+from netix_backend.django import pydantic as bridge
 from netix_backend.django.pydantic import PydanticInputMixin, PydanticListSerializer, PydanticReadMixin, describe
 
 
@@ -315,3 +316,73 @@ def test_input_preserves_querydict_values_for_drf_only_fields():
     serializer = ExplicitInputSerializer(data=data)
     assert serializer.is_valid(), serializer.errors
     assert serializer.validated_data["relation"] == 12
+
+
+def test_input_preserves_repeated_querydict_values_for_explicit_list_fields():
+    class ListRequest(BaseModel):
+        tags: list[str]
+
+    class ListInput(PydanticInputMixin, serializers.Serializer):
+        pydantic_model = ListRequest
+        tags = serializers.ListField(child=serializers.CharField())
+
+    data = QueryDict("tags=a&tags=b")
+    serializer = ListInput(data=data)
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data == {"tags": ["a", "b"]}
+
+
+def test_conservative_converter_edge_paths_and_opt_out():
+    class EdgeSerializer(PydanticReadMixin, serializers.Serializer):
+        pydantic_read = False
+        hidden = serializers.CharField(write_only=True)
+        dotted = serializers.CharField(source="nested.name")
+
+    assert EdgeSerializer(SimpleNamespace(nested=SimpleNamespace(name="n"))).data == {"dotted": "n"}
+    mapped, fallback = describe(EdgeSerializer())
+    assert not mapped
+    assert fallback == {"dotted": "complex source"}
+
+    boolean = bridge._boolean(serializers.BooleanField(allow_null=True))
+    assert boolean(None) is None
+    assert boolean("TRUE") is True
+    assert boolean([]) is False
+    assert boolean("unknown") is True
+    assert bridge._string(None) is None
+    assert bridge._integer(None) is None
+    assert bridge._floating(None) is None
+
+
+def test_list_opt_out_and_fallback_skipfield_paths():
+    class Plain(serializers.Serializer):
+        name = serializers.CharField()
+
+    plain = Plain()
+    assert PydanticListSerializer(child=plain).to_representation([Record()]) == [{"name": "7"}]
+
+    class OptionalCustom(serializers.Field):
+        def to_representation(self, value: Any) -> Any:
+            return value
+
+        def to_internal_value(self, data: Any) -> Any:
+            return data
+
+    class FastOptional(PydanticReadMixin, serializers.Serializer):
+        missing = OptionalCustom(required=False)
+
+    assert FastOptional(SimpleNamespace()).data == {}
+
+
+def test_nested_error_builder_handles_direct_list_locations_and_repeated_errors():
+    class FakeError:
+        def errors(self, **kwargs: Any) -> list[dict[str, Any]]:
+            return [
+                {"loc": ("items", 0), "msg": "first", "type": "bad"},
+                {"loc": ("items", 0), "msg": "second", "type": "worse"},
+                {"loc": ("matrix", 0, 0), "msg": "cell", "type": "bad"},
+                {"loc": ("matrix", 0, 1), "msg": "cell two", "type": "bad"},
+            ]
+
+    errors = bridge._drf_errors(FakeError())  # type: ignore[arg-type]
+    assert [detail.code for detail in errors["items"][0]] == ["bad", "worse"]
+    assert errors["matrix"][0][0][0].code == "bad"

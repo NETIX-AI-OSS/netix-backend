@@ -253,8 +253,6 @@ class PydanticReadMixin:
         output: list[dict[str, Any]] = []
         for row, instance in zip(rows, instances, strict=True):
             for name in adapter.fallback:
-                if name not in live_fields:
-                    continue
                 try:
                     row[name] = self._drf_value(name, instance)
                 except SkipField:
@@ -312,8 +310,18 @@ class PydanticInputMixin:
                 raise AssertionError(
                     f"{type(self).__name__} must declare pydantic_partial_model before it can validate PATCH data"
                 )
+        pydantic_data = data
+        if isinstance(data, MultiValueDict):
+            pydantic_data = dict(data.items())
+            accepted = {name for name in model.model_fields}
+            accepted.update(
+                field.alias for field in model.model_fields.values() if isinstance(field.alias, str)
+            )
+            for name, field in cast(Any, self).fields.items():
+                if name in accepted and isinstance(field, (drf_fields.ListField, ListSerializer)):
+                    pydantic_data[name] = field.get_value(data)
         try:
-            parsed = model.model_validate(data)
+            parsed = model.model_validate(pydantic_data)
         except PydanticValidationError as exc:
             raise ValidationError(_drf_errors(exc)) from exc
 
