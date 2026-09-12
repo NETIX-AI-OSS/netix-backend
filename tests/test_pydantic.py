@@ -9,10 +9,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+from adrf import serializers as async_serializers
 from django.utils import timezone
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rest_framework import serializers
 
-from netix_backend.django.pydantic import PydanticListSerializer, PydanticReadMixin, describe
+from netix_backend.django.pydantic import PydanticInputMixin, PydanticListSerializer, PydanticReadMixin, describe
 
 
 @dataclass
@@ -103,6 +106,19 @@ def test_live_dynamic_fields_are_neither_reused_by_name_nor_fetched_when_omitted
     assert DynamicSerializer(record, value_type="integer").data == {"value": 8}
 
 
+def test_nullable_missing_and_explicit_defaults_match_drf():
+    class EdgeSerializer(serializers.Serializer):
+        flag = serializers.BooleanField(allow_null=True)
+        missing = serializers.CharField(required=False, allow_null=True)
+        defaulted = serializers.CharField(default="fallback")
+
+    class FastEdgeSerializer(PydanticReadMixin, EdgeSerializer):
+        pass
+
+    for value in ({"flag": "FaLsE"}, {"flag": None}):
+        assert FastEdgeSerializer(value).data == EdgeSerializer(value).data
+
+
 class CustomCharField(serializers.CharField):
     def to_representation(self, value: Any) -> str:
         return f"custom:{value}"
@@ -147,6 +163,30 @@ def test_subclass_row_representation_is_not_bypassed_by_batching():
     assert PostProcessingSerializer([Record()], many=True).data == [{"name": "7", "postprocessed": True}]
 
 
+def test_intermediate_base_representation_is_not_bypassed_by_batching():
+    class HookBase(serializers.Serializer):
+        name = serializers.CharField()
+
+        def to_representation(self, instance: Any) -> Any:
+            data = super().to_representation(instance)
+            data["base_hook"] = True
+            return data
+
+    class FastHookSerializer(PydanticReadMixin, HookBase):
+        pass
+
+    assert FastHookSerializer([Record()], many=True).data == [{"name": "7", "base_hook": True}]
+
+
+@pytest.mark.asyncio
+async def test_adrf_adata_surface_is_preserved():
+    class AsyncSerializer(PydanticReadMixin, async_serializers.Serializer):
+        name = serializers.CharField()
+
+    serializer = AsyncSerializer([Record()], many=True)
+    assert await serializer.adata == [{"name": "7"}]
+
+
 def test_write_validation_partial_and_save_hooks_remain_drf_owned():
     class WritableSerializer(PydanticReadMixin, serializers.Serializer):
         name = serializers.CharField()
@@ -170,3 +210,87 @@ def test_write_validation_partial_and_save_hooks_remain_drf_owned():
     create = WritableSerializer(data={"name": "new"})
     assert create.is_valid(), create.errors
     assert create.save().name == "new"
+
+
+class CreateRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(min_length=3)
+    count: int = Field(default=2, ge=1)
+
+    @model_validator(mode="after")
+    def name_and_count_agree(self) -> CreateRequest:
+        if self.name == "many" and self.count < 2:
+            raise ValueError("many requires at least two")
+        return self
+
+
+class PatchRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = Field(default=None, min_length=3)
+    count: int | None = Field(default=None, ge=1)
+
+
+class NestedItem(BaseModel):
+    count: int = Field(ge=1)
+
+
+class NestedRequest(BaseModel):
+    items: list[NestedItem]
+
+
+class ExplicitInputSerializer(PydanticInputMixin, serializers.Serializer):
+    pydantic_model = CreateRequest
+    pydantic_partial_model = PatchRequest
+
+    name = serializers.CharField()
+    count = serializers.IntegerField(default=9)
+    relation = serializers.IntegerField(required=False, min_value=10)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        if attrs.get("name") == "drf":
+            raise serializers.ValidationError({"name": "DRF hook ran"})
+        return attrs
+
+
+def test_explicit_input_model_normalizes_defaults_then_keeps_drf_fields_and_hooks():
+    serializer = ExplicitInputSerializer(data={"name": "item", "relation": 12})
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data == {"name": "item", "count": 9, "relation": 12}
+
+    drf_hook = ExplicitInputSerializer(data={"name": "drf"})
+    assert not drf_hook.is_valid()
+    assert "name" in drf_hook.errors
+
+
+def test_explicit_input_errors_have_drf_field_keys_and_pydantic_codes():
+    serializer = ExplicitInputSerializer(data={"name": "x"})
+    assert not serializer.is_valid()
+    assert serializer.errors["name"][0].code == "string_too_short"
+
+    cross_field = ExplicitInputSerializer(data={"name": "many", "count": 1})
+    assert not cross_field.is_valid()
+    assert cross_field.errors["non_field_errors"][0].code == "value_error"
+
+    class NestedInput(PydanticInputMixin, serializers.Serializer):
+        pydantic_model = NestedRequest
+        items = serializers.ListField(child=serializers.DictField())
+
+    nested = NestedInput(data={"items": [{"count": 0}]})
+    assert not nested.is_valid()
+    assert nested.errors["items"][0]["count"][0].code == "greater_than_equal"
+
+
+def test_partial_input_uses_explicit_patch_contract_without_applying_defaults():
+    serializer = ExplicitInputSerializer(data={"count": "3"}, partial=True)
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data == {"count": 3}
+
+    class UnsafePartial(PydanticInputMixin, serializers.Serializer):
+        pydantic_model = CreateRequest
+        name = serializers.CharField()
+
+    with pytest.raises(AssertionError, match="pydantic_partial_model"):
+        UnsafePartial(data={}, partial=True).is_valid()

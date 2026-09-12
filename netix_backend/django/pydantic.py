@@ -11,13 +11,30 @@ from collections.abc import Callable, Mapping
 from typing import Annotated, Any, ClassVar, cast
 
 from django.db import models
-from pydantic import ConfigDict, Field, PlainSerializer, TypeAdapter, create_model
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    TypeAdapter,
+    create_model,
+)
+from pydantic import (
+    ValidationError as PydanticValidationError,
+)
 from rest_framework import fields as drf_fields
+from rest_framework.exceptions import ErrorDetail, ValidationError
 from rest_framework.fields import SkipField
 from rest_framework.relations import PKOnlyObject, PrimaryKeyRelatedField
 from rest_framework.serializers import ListSerializer, Serializer
 
-__all__ = ["PydanticListSerializer", "PydanticReadMixin", "build_output_adapter", "describe"]
+__all__ = [
+    "PydanticInputMixin",
+    "PydanticListSerializer",
+    "PydanticReadMixin",
+    "build_output_adapter",
+    "describe",
+]
 
 
 class _Unmappable(Exception):
@@ -30,12 +47,13 @@ def _string(value: Any) -> str | None:
 
 def _boolean(field: drf_fields.BooleanField) -> Callable[[Any], bool | None]:
     def render(value: Any) -> bool | None:
+        comparable = value.lower() if isinstance(value, str) else value
         try:
-            if value in field.TRUE_VALUES:
+            if comparable in field.TRUE_VALUES:
                 return True
-            if value in field.FALSE_VALUES:
+            if comparable in field.FALSE_VALUES:
                 return False
-            if value in field.NULL_VALUES and field.allow_null:
+            if comparable in field.NULL_VALUES and field.allow_null:
                 return None
         except TypeError:
             pass
@@ -114,6 +132,8 @@ def describe(serializer: Serializer) -> tuple[dict[str, tuple[str, ...]], dict[s
         if field.write_only:
             continue
         try:
+            if field.default is not drf_fields.empty:
+                raise _Unmappable("field default")
             _converter(field)
             mapped[name] = _source(name, field)
         except _Unmappable as exc:
@@ -124,6 +144,7 @@ def describe(serializer: Serializer) -> tuple[dict[str, tuple[str, ...]], dict[s
 class _OutputAdapter:
     def __init__(self, serializer: Serializer) -> None:
         self.mapped, self.fallback = describe(serializer)
+        self.nullable = {name for name in self.mapped if serializer.fields[name].allow_null}
         definitions: dict[str, Any] = {}
         for name, source in self.mapped.items():
             field = serializer.fields[name]
@@ -140,7 +161,11 @@ class _OutputAdapter:
 
     def dump(self, instances: list[Any]) -> list[dict[str, Any]]:
         validated = self.adapter.validate_python(instances, from_attributes=True)
-        return cast(list[dict[str, Any]], self.adapter.dump_python(validated, exclude_unset=True))
+        rows = cast(list[dict[str, Any]], self.adapter.dump_python(validated, exclude_unset=True))
+        for row in rows:
+            for name in self.nullable:
+                row.setdefault(name, None)
+        return rows
 
 
 _ADAPTERS: dict[tuple[type[Serializer], tuple[tuple[Any, ...], ...]], _OutputAdapter] = {}
@@ -165,7 +190,10 @@ class PydanticListSerializer(ListSerializer):  # pylint: disable=abstract-method
         child = cast(Any, self.child)
         if not getattr(type(child), "pydantic_read", False):
             return super().to_representation(data)
-        if type(child).to_representation is not PydanticReadMixin.to_representation:
+        if (
+            type(child).to_representation is not PydanticReadMixin.to_representation
+            or not child._can_batch_representation()
+        ):
             return super().to_representation(data)
         items = list(data.all() if isinstance(data, models.Manager) else data)
         return child.dump_many(items)
@@ -173,6 +201,12 @@ class PydanticListSerializer(ListSerializer):  # pylint: disable=abstract-method
 
 class PydanticReadMixin:
     pydantic_read: ClassVar[bool] = True
+
+    def _can_batch_representation(self) -> bool:
+        mro = type(self).mro()
+        mixin_index = mro.index(PydanticReadMixin)
+        serializer_index = mro.index(Serializer)
+        return not any("to_representation" in base.__dict__ for base in mro[mixin_index + 1 : serializer_index])
 
     @classmethod
     def many_init(cls, *args: Any, **kwargs: Any) -> ListSerializer:
@@ -216,9 +250,58 @@ class PydanticReadMixin:
     def to_representation(self, instance: Any) -> Mapping[str, Any]:
         if not type(self).pydantic_read:
             return super().to_representation(instance)  # type: ignore[misc]
-        mro = type(self).mro()
-        mixin_index = mro.index(PydanticReadMixin)
-        serializer_index = mro.index(Serializer)
-        if any("to_representation" in base.__dict__ for base in mro[mixin_index + 1 : serializer_index]):
+        if not self._can_batch_representation():
             return super().to_representation(instance)  # type: ignore[misc]
         return self.dump_many([instance])[0]
+
+
+def _drf_errors(exc: PydanticValidationError) -> dict[str, Any]:
+    """Translate Pydantic locations and codes into DRF's field-error envelope."""
+    errors: dict[str, Any] = {}
+    for error in exc.errors(include_url=False, include_context=False, include_input=False):
+        location = list(error["loc"]) or ["non_field_errors"]
+        detail = ErrorDetail(str(error["msg"]), code=str(error["type"]))
+        cursor: Any = errors
+        for index, part in enumerate(location):
+            last = index == len(location) - 1
+            next_is_index = not last and isinstance(location[index + 1], int)
+            if isinstance(part, int):
+                while len(cursor) <= part:
+                    cursor.append(None)
+                if last:
+                    if cursor[part] is None:
+                        cursor[part] = []
+                    cursor[part].append(detail)
+                else:
+                    if cursor[part] is None:
+                        cursor[part] = [] if next_is_index else {}
+                    cursor = cursor[part]
+            elif last:
+                cursor.setdefault(str(part), []).append(detail)
+            else:
+                cursor = cursor.setdefault(str(part), [] if next_is_index else {})
+    return errors
+
+
+class PydanticInputMixin:
+    # PATCH is explicit: mechanically optionalizing a create model can weaken cross-field validators.
+    pydantic_model: ClassVar[type[BaseModel]]
+    pydantic_partial_model: ClassVar[type[BaseModel] | None] = None
+
+    def to_internal_value(self, data: Any) -> Any:
+        model = self.pydantic_model
+        partial = bool(getattr(cast(Any, self).root, "partial", cast(Any, self).partial))
+        if partial:
+            model = self.pydantic_partial_model  # type: ignore[assignment]
+            if model is None:
+                raise AssertionError(
+                    f"{type(self).__name__} must declare pydantic_partial_model before it can validate PATCH data"
+                )
+        try:
+            parsed = model.model_validate(data)
+        except PydanticValidationError as exc:
+            raise ValidationError(_drf_errors(exc)) from exc
+
+        normalized = dict(data)
+        normalized.update(parsed.model_dump(mode="python", by_alias=True, exclude_unset=True))
+        return super().to_internal_value(normalized)  # type: ignore[misc]

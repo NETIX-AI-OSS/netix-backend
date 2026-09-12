@@ -44,6 +44,7 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.django.exceptions` | `custom_exception_handler` + message flatteners, behind `NETIX_ERRORS_*` settings |
 | `netix_backend.django.pagination` | `limit_offset_pagination()` factory, `BaseLimitOffsetPagination`, `BigLimitOffsetPagination` |
 | `netix_backend.django.serializers` | `BASE_FIELDS`, `NAMED_BASE_FIELDS`, `NamedBaseSerializer`, `ChangeHistorySerializerMixin`, `ChangeHistoryEntrySerializer`, `ChangeHistoryChangeSerializer` |
+| `netix_backend.django.pydantic` | `PydanticReadMixin` for conservative scalar read batching and `PydanticInputMixin` for explicit Pydantic request contracts |
 | `netix_backend.django.filters` | `CharArrayFilter`, `CharInFilter`, `NumberInFilter`, `IntArrayFilter`, `NumberArrayFilter`, `BASE_FILTERS` (requires the `spectacular` extra) |
 | `netix_backend.django.schema` | `AsyncActionAutoSchema`, `XlsxExportAutoSchema`, `XLSX_BINARY_RESPONSE` (requires the `spectacular` extra) |
 | `netix_backend.django.excel` | envoy-free export core: style presets, `ExcelExportViewSet`, `DocumentedExcelViewSet` (requires the `excel` extra) |
@@ -60,6 +61,49 @@ services today — declare `model_queryset` to get organization scoping.
 
 Behavioral knobs default to what the fleet ships today; behavior changes are opt-in per service.
 See `CHANGELOG.md` for migration notes per release.
+
+## Pydantic serializer bridge
+
+The bridge keeps the DRF serializer as the schema, persistence, relation-authorization, and
+specialized-field boundary. Safe built-in scalar reads can be batched through Pydantic; nested,
+method, custom, configured, or dynamic fields stay on their existing DRF representation path.
+No speedup should be assumed for a serializer until its own representative list endpoint is
+measured.
+
+Request validation uses explicit models. Declare a separate PATCH model because making a create
+model optional mechanically can weaken cross-field validation:
+
+```python
+from pydantic import BaseModel, Field
+from rest_framework import serializers
+
+from netix_backend.django.pydantic import PydanticInputMixin, PydanticReadMixin
+
+
+class WidgetCreate(BaseModel):
+    name: str = Field(min_length=3)
+    count: int = Field(ge=1)
+
+
+class WidgetPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=3)
+    count: int | None = Field(default=None, ge=1)
+
+
+class WidgetSerializer(PydanticInputMixin, PydanticReadMixin, serializers.ModelSerializer):
+    pydantic_model = WidgetCreate
+    pydantic_partial_model = WidgetPatch
+
+    class Meta:
+        model = Widget
+        fields = ["id", "name", "count"]
+```
+
+Pydantic normalizes supplied request values first. DRF then runs its ordinary fields, validators,
+`validate()`, `create()`/`update()`, and `save()` hooks. Unset Pydantic defaults are not injected;
+keep defaults on the DRF field so POST/PUT/PATCH retain their established behavior. Pydantic errors
+use DRF's nested field-error shape and retain the Pydantic error type as each `ErrorDetail.code`.
+Using `partial=True` without `pydantic_partial_model` fails closed during development.
 
 ## ASGI entrypoints
 
