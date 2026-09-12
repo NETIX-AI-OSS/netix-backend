@@ -7,7 +7,7 @@ mixin only batches proven-safe scalar attribute reads through a Pydantic ``TypeA
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, cast
 
 from django.db import models
@@ -245,7 +245,7 @@ class PydanticReadMixin:
             output.append({name: row[name] for name in order if name in row})
         return output
 
-    def to_representation(self, instance: Any) -> Mapping[str, Any]:
+    def to_representation(self, instance: Any) -> dict[str, Any]:
         if not type(self).pydantic_read:
             return super().to_representation(instance)  # type: ignore[misc]
         if not self._can_batch_representation():
@@ -299,9 +299,7 @@ class PydanticInputMixin:
         if isinstance(data, MultiValueDict):
             pydantic_data = dict(data.items())
             accepted = {name for name in model.model_fields}
-            accepted.update(
-                field.alias for field in model.model_fields.values() if isinstance(field.alias, str)
-            )
+            accepted.update(field.alias for field in model.model_fields.values() if isinstance(field.alias, str))
             for name, field in cast(Any, self).fields.items():
                 if name in accepted and isinstance(field, (drf_fields.ListField, ListSerializer)):
                     value = field.get_value(data)
