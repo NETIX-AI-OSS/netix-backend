@@ -43,11 +43,13 @@ class _Unmappable(Exception):
 
 
 def _string(value: Any) -> str | None:
+    value = value() if is_simple_callable(value) else value
     return None if value is None else str(value)
 
 
 def _boolean(field: drf_fields.BooleanField) -> Callable[[Any], bool | None]:
     def render(value: Any) -> bool | None:
+        value = value() if is_simple_callable(value) else value
         comparable = value.lower() if isinstance(value, str) else value
         try:
             if comparable in field.TRUE_VALUES:
@@ -64,10 +66,12 @@ def _boolean(field: drf_fields.BooleanField) -> Callable[[Any], bool | None]:
 
 
 def _integer(value: Any) -> int | None:
+    value = value() if is_simple_callable(value) else value
     return None if value is None else int(value)
 
 
 def _floating(value: Any) -> float | None:
+    value = value() if is_simple_callable(value) else value
     return None if value is None else float(value)
 
 
@@ -156,31 +160,12 @@ class _OutputAdapter:
         self.adapter: TypeAdapter[Any] = TypeAdapter(list[model])  # type: ignore[valid-type]
 
     def dump(self, instances: list[Any]) -> list[dict[str, Any]]:
-        validated = self.adapter.validate_python(
-            [_AttributeProxy(instance) for instance in instances], from_attributes=True
-        )
+        validated = self.adapter.validate_python(instances, from_attributes=True)
         rows = cast(list[dict[str, Any]], self.adapter.dump_python(validated, exclude_unset=True))
         for row in rows:
             for name in self.nullable:
                 row.setdefault(name, None)
         return rows
-
-
-class _AttributeProxy:
-    """Resolve each fast-path source once, including DRF's zero-argument callable convention."""
-
-    def __init__(self, instance: Any) -> None:
-        self.instance = instance
-        self.values: dict[str, Any] = {}
-
-    def __getattr__(self, name: str) -> Any:
-        if name not in self.values:
-            try:
-                value = self.instance[name] if isinstance(self.instance, Mapping) else getattr(self.instance, name)
-            except (KeyError, AttributeError) as exc:
-                raise AttributeError(name) from exc
-            self.values[name] = value() if is_simple_callable(value) else value
-        return self.values[name]
 
 
 _ADAPTERS: dict[tuple[type[Serializer], tuple[tuple[Any, ...], ...]], _OutputAdapter] = {}
@@ -319,7 +304,9 @@ class PydanticInputMixin:
             )
             for name, field in cast(Any, self).fields.items():
                 if name in accepted and isinstance(field, (drf_fields.ListField, ListSerializer)):
-                    pydantic_data[name] = field.get_value(data)
+                    value = field.get_value(data)
+                    if value is not drf_fields.empty:
+                        pydantic_data[name] = value
         try:
             parsed = model.model_validate(pydantic_data)
         except PydanticValidationError as exc:

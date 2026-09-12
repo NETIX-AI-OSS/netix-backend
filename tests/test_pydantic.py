@@ -331,6 +331,14 @@ def test_input_preserves_repeated_querydict_values_for_explicit_list_fields():
     assert serializer.is_valid(), serializer.errors
     assert serializer.validated_data == {"tags": ["a", "b"]}
 
+    class ListPatch(BaseModel):
+        tags: list[str] | None = None
+
+    ListInput.pydantic_partial_model = ListPatch
+    missing = ListInput(data=QueryDict(""), partial=True)
+    assert missing.is_valid(), missing.errors
+    assert missing.validated_data == {}
+
 
 def test_conservative_converter_edge_paths_and_opt_out():
     class EdgeSerializer(PydanticReadMixin, serializers.Serializer):
