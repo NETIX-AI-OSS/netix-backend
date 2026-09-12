@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from typing import Annotated, Any, ClassVar, cast
 
 from django.db import models
+from django.utils.datastructures import MultiValueDict
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -24,8 +25,8 @@ from pydantic import (
 )
 from rest_framework import fields as drf_fields
 from rest_framework.exceptions import ErrorDetail, ValidationError
-from rest_framework.fields import SkipField
-from rest_framework.relations import PKOnlyObject, PrimaryKeyRelatedField
+from rest_framework.fields import SkipField, is_simple_callable
+from rest_framework.relations import PKOnlyObject
 from rest_framework.serializers import ListSerializer, Serializer
 
 __all__ = [
@@ -99,12 +100,7 @@ def _source(name: str, field: drf_fields.Field) -> tuple[str, ...]:
     source = field.source or name
     if source == "*" or "." in source:
         raise _Unmappable("complex source")
-    parts = (source,)
-    if isinstance(field, PrimaryKeyRelatedField):
-        if len(parts) != 1:
-            raise _Unmappable("related dotted source")
-        parts = (f"{parts[0]}_id",)
-    return parts
+    return (source,)
 
 
 def _field_signature(name: str, field: drf_fields.Field) -> tuple[Any, ...]:
@@ -160,12 +156,31 @@ class _OutputAdapter:
         self.adapter: TypeAdapter[Any] = TypeAdapter(list[model])  # type: ignore[valid-type]
 
     def dump(self, instances: list[Any]) -> list[dict[str, Any]]:
-        validated = self.adapter.validate_python(instances, from_attributes=True)
+        validated = self.adapter.validate_python(
+            [_AttributeProxy(instance) for instance in instances], from_attributes=True
+        )
         rows = cast(list[dict[str, Any]], self.adapter.dump_python(validated, exclude_unset=True))
         for row in rows:
             for name in self.nullable:
                 row.setdefault(name, None)
         return rows
+
+
+class _AttributeProxy:
+    """Resolve each fast-path source once, including DRF's zero-argument callable convention."""
+
+    def __init__(self, instance: Any) -> None:
+        self.instance = instance
+        self.values: dict[str, Any] = {}
+
+    def __getattr__(self, name: str) -> Any:
+        if name not in self.values:
+            try:
+                value = self.instance[name] if isinstance(self.instance, Mapping) else getattr(self.instance, name)
+            except (KeyError, AttributeError) as exc:
+                raise AttributeError(name) from exc
+            self.values[name] = value() if is_simple_callable(value) else value
+        return self.values[name]
 
 
 _ADAPTERS: dict[tuple[type[Serializer], tuple[tuple[Any, ...], ...]], _OutputAdapter] = {}
@@ -302,6 +317,12 @@ class PydanticInputMixin:
         except PydanticValidationError as exc:
             raise ValidationError(_drf_errors(exc)) from exc
 
-        normalized = dict(data)
-        normalized.update(parsed.model_dump(mode="python", by_alias=True, exclude_unset=True))
+        values = parsed.model_dump(mode="python", by_alias=True, exclude_unset=True)
+        if isinstance(data, MultiValueDict):
+            normalized = data.copy()
+            for key, value in values.items():
+                normalized.setlist(key, value if isinstance(value, list) else [value])
+        else:
+            normalized = dict(data)
+            normalized.update(values)
         return super().to_internal_value(normalized)  # type: ignore[misc]

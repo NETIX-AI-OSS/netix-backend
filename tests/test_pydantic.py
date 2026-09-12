@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from adrf import serializers as async_serializers
+from django.http import QueryDict
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rest_framework import serializers
@@ -117,6 +118,19 @@ def test_nullable_missing_and_explicit_defaults_match_drf():
 
     for value in ({"flag": "FaLsE"}, {"flag": None}):
         assert FastEdgeSerializer(value).data == EdgeSerializer(value).data
+
+
+def test_zero_argument_source_method_uses_drf_callable_semantics():
+    class CallableRecord:
+        def get_name(self) -> str:
+            return "called"
+
+    class CallableSerializer(PydanticReadMixin, serializers.Serializer):
+        name = serializers.CharField(source="get_name")
+        count = serializers.IntegerField(source="get_count")
+
+    CallableRecord.get_count = lambda self: "4"  # type: ignore[attr-defined]
+    assert CallableSerializer(CallableRecord()).data == {"name": "called", "count": 4}
 
 
 class CustomCharField(serializers.CharField):
@@ -294,3 +308,10 @@ def test_partial_input_uses_explicit_patch_contract_without_applying_defaults():
 
     with pytest.raises(AssertionError, match="pydantic_partial_model"):
         UnsafePartial(data={}, partial=True).is_valid()
+
+
+def test_input_preserves_querydict_values_for_drf_only_fields():
+    data = QueryDict("name=item&relation=12")
+    serializer = ExplicitInputSerializer(data=data)
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data["relation"] == 12
