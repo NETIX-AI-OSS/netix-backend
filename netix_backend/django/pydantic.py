@@ -8,6 +8,7 @@ mixin only batches proven-safe scalar attribute reads through a Pydantic ``TypeA
 from __future__ import annotations
 
 from collections.abc import Callable
+from itertools import islice
 from typing import Annotated, Any, ClassVar, cast
 
 from django.db import models
@@ -206,7 +207,7 @@ class PydanticReadMixin:
         mro = type(self).mro()
         mixin_index = mro.index(PydanticReadMixin)
         serializer_index = mro.index(Serializer)
-        return not any("to_representation" in base.__dict__ for base in mro[mixin_index + 1 : serializer_index])
+        return not any("to_representation" in base.__dict__ for base in islice(mro, mixin_index + 1, serializer_index))
 
     @classmethod
     def many_init(cls, *args: Any, **kwargs: Any) -> ListSerializer:
