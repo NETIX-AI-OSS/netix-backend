@@ -1,0 +1,7 @@
+# Review owners for this repository. GitHub requests a review from every matching
+# owner automatically; the last matching pattern wins.
+#
+# netix-backend is consumed by 18 backend services as a pinned git tag, so a change
+# here reaches the fleet on the next per-service bump. Every path is owned.
+
+* @prafiles
