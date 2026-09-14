@@ -101,8 +101,8 @@ def postgres_database(
     disable_server_side_cursors: bool | _Omit = True,
     conn_max_age: Value = 0,
     conn_health_checks: bool | _Omit = OMIT,
-    # OMIT drops "prepare_threshold" and, with no other member set, the whole OPTIONS key; None emits it as None.
-    prepare_threshold: int | None | _Omit = OMIT,
+    # None by default: every alias reaches Postgres through pgbouncer in transaction mode. OMIT drops the key.
+    prepare_threshold: int | None | _Omit = None,
     connect_timeout: Value | _Omit = OMIT,
     options: Mapping[str, Any] | _Omit = OMIT,
     test: Mapping[str, Any] | _Omit = OMIT,

@@ -233,9 +233,11 @@ DATABASES["read_replica"] = replica_of(
 ```
 
 `FromEnv("POSTGRES_HOST", "historian.platform")` reproduces `os.environ.get(...)` exactly — an
-empty string stays an empty string, never the default. `OMIT` drops a key entirely; the
-`OPTIONS` dict is only emitted when `prepare_threshold` / `connect_timeout` / `options` is set,
-so repos without it today keep not having it.
+empty string stays an empty string, never the default. `OMIT` drops a key entirely. Since
+v1.5.0 `prepare_threshold` defaults to `None`, so every alias carries
+`OPTIONS = {"prepare_threshold": None}` — the setting pgbouncer's transaction pooling mode
+requires. An alias that talks to Postgres directly opts out with `prepare_threshold=OMIT`,
+which drops the key and, with no `connect_timeout` / `options` set, the whole `OPTIONS` dict.
 
 ## Sentry init
 

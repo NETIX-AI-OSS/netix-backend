@@ -56,10 +56,10 @@ def db_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestPerRepoAliases:
-    """Each expected dict is a literal copy of what the named settings.py binds today."""
+    """Each expected dict is what the named settings.py binds, with v1.5.0's prepare_threshold default applied."""
 
     def test_gateway_service_license_server_report_engine_update_service(self) -> None:
-        # Four repos plus backend-template produce this exact dict: no CONN_HEALTH_CHECKS, no OPTIONS.
+        # Four repos plus backend-template produce this exact dict: no CONN_HEALTH_CHECKS.
         assert postgres_database(conn_max_age=0) == {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": "netix",
@@ -70,6 +70,7 @@ class TestPerRepoAliases:
             "CONN_MAX_AGE": 0,
             "ATOMIC_REQUESTS": False,
             "DISABLE_SERVER_SIDE_CURSORS": True,
+            "OPTIONS": {"prepare_threshold": None},
         }
 
     def test_ml_engine(self) -> None:
@@ -84,6 +85,7 @@ class TestPerRepoAliases:
             "CONN_HEALTH_CHECKS": True,
             "ATOMIC_REQUESTS": False,
             "DISABLE_SERVER_SIDE_CURSORS": True,
+            "OPTIONS": {"prepare_threshold": None},
         }
 
     def test_notification_service_and_static_service_omit_conn_max_age(self) -> None:
@@ -96,6 +98,7 @@ class TestPerRepoAliases:
             "PORT": "5432",
             "ATOMIC_REQUESTS": False,
             "DISABLE_SERVER_SIDE_CURSORS": True,
+            "OPTIONS": {"prepare_threshold": None},
         }
 
     def test_asset_service_default_and_conditional_read_replica(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,6 +284,7 @@ class TestPerRepoAliases:
             "PORT": "5432",
             "CONN_MAX_AGE": 0,
             "CONN_HEALTH_CHECKS": True,
+            "OPTIONS": {"prepare_threshold": None},
         }
 
     def test_visualization_backend_readonly_carries_a_test_name(self) -> None:
@@ -309,9 +313,12 @@ class TestPerRepoAliases:
 
 
 class TestOptionsEmission:
-    def test_no_options_key_at_all_by_default(self) -> None:
-        # Invariants 1-2: nine services have no OPTIONS key today and adoption must not invent one.
-        assert "OPTIONS" not in postgres_database()
+    def test_prepare_threshold_none_is_the_default(self) -> None:
+        assert postgres_database()["OPTIONS"] == {"prepare_threshold": None}
+
+    def test_omitting_prepare_threshold_drops_the_options_key_entirely(self) -> None:
+        # The opt-out an alias needs only when it does not reach Postgres through pgbouncer.
+        assert "OPTIONS" not in postgres_database(prepare_threshold=OMIT)
 
     def test_prepare_threshold_none_is_not_the_same_as_omit(self) -> None:
         assert postgres_database(prepare_threshold=None)["OPTIONS"] == {"prepare_threshold": None}
@@ -320,12 +327,12 @@ class TestOptionsEmission:
         assert postgres_database(prepare_threshold=5)["OPTIONS"] == {"prepare_threshold": 5}
 
     def test_connect_timeout_alone_emits_options(self) -> None:
-        assert postgres_database(connect_timeout=5)["OPTIONS"] == {"connect_timeout": 5}
+        assert postgres_database(prepare_threshold=OMIT, connect_timeout=5)["OPTIONS"] == {"connect_timeout": 5}
 
     def test_connect_timeout_reads_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("POSTGRES_CONNECT_TIMEOUT", "7")
         options = postgres_database(connect_timeout=FromEnv("POSTGRES_CONNECT_TIMEOUT", "5", cast=int))["OPTIONS"]
-        assert options == {"connect_timeout": 7}
+        assert options == {"prepare_threshold": None, "connect_timeout": 7}
 
     def test_free_form_options_merge_last(self) -> None:
         entry = postgres_database(prepare_threshold=None, options={"sslmode": "require"})
@@ -339,6 +346,7 @@ class TestOmitAndExtras:
             "CONN_MAX_AGE",
             "ATOMIC_REQUESTS",
             "DISABLE_SERVER_SIDE_CURSORS",
+            "OPTIONS",
         }
 
     def test_extra_keys_are_appended_verbatim(self) -> None:
@@ -346,7 +354,7 @@ class TestOmitAndExtras:
 
     def test_key_order_pins_the_repr_and_ignores_missing_keys(self) -> None:
         # H1: Django reads DATABASES by key, so this exists only for a repo that snapshots the dict repr.
-        entry = postgres_database(key_order=("NAME", "OPTIONS", "ENGINE"))
+        entry = postgres_database(prepare_threshold=OMIT, key_order=("NAME", "OPTIONS", "ENGINE"))
         assert list(entry)[:2] == ["NAME", "ENGINE"]
 
     def test_default_key_order_is_the_django_settings_order(self) -> None:

@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.5.0 — unreleased
+
+### Changed
+
+- **`netix_backend.database.postgres_database(...)`: `prepare_threshold` now defaults to `None`
+  instead of `OMIT`.** Every alias the factory builds therefore carries
+  `OPTIONS = {"prepare_threshold": None}`, which disables psycopg's prepared statements — the
+  setting pgbouncer needs in transaction pooling mode, where a prepared statement is prepared on
+  one server connection and executed on another.
+
+  **Why the default moved.** v1.2.0 deliberately preserved the fleet's 9-present / 9-absent
+  split so adoption could not change behaviour. That left the pgbouncer fix as an opt-in nine
+  services never opted into: `backend-template`, `gateway-service`, `license-server`,
+  `ml-engine`, `notification-service`, `report-engine`, `static-service`, `update-service` and
+  `vision-ai-service` emitted no `prepare_threshold` at all. Defaulting it to `None` makes the
+  safe value the one a service gets for free, and the split disappears.
+
+  **Who is affected.** The nine services that state `prepare_threshold=None` explicitly are
+  unaffected — the argument they already pass is what the default now produces, and their
+  `DATABASES` dict is byte-identical on v1.5.0. The nine that stated nothing gain the
+  `OPTIONS` key on their next bump; behind pgbouncer that is the fix, and against a direct
+  Postgres connection it only forgoes server-side statement caching.
+
+  **Opting out.** An alias that must keep prepared statements — or must keep having no
+  `OPTIONS` key at all — passes `prepare_threshold=OMIT`, which drops the key and, with no
+  `connect_timeout` / `options` set, the whole `OPTIONS` dict.
+
 ## v1.4.0 — 2026-09-11
 
 *Why* a change was made, alongside the *what*, *when* and *by whom* v1.3.0 already recorded.
