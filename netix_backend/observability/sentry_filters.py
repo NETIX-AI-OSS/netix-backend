@@ -21,6 +21,38 @@ IGNORED_TELEMETRY_LOGGERS: tuple[str, ...] = (
     "opentelemetry.sdk.trace.export",  # BatchSpanProcessor export failures
 )
 
+# One shared-Postgres bounce reaches every service at once. Matched by substring on the exception chain, these
+# pin the whole fan-out to one issue per failure mode instead of one per service, per view and per message variant.
+
+# PGBouncer/libpq connect failures: the pool is gone, the query never ran, and no service can do anything about it.
+DB_CONNECT_SIGNATURES: tuple[str, ...] = (
+    "connection timeout expired",
+    "connection failed: connection to server at",
+    "consuming input failed: server closed the connection unexpectedly",
+    "server closed the connection unexpectedly",
+    "the connection is closed",
+    # PGBouncer control-plane messages (these strings exist only in PGBouncer):
+    "server login has been failing",
+    "server conn crashed?",
+    "server shutting down",
+    "database removed",
+    "the database system is shutting down",
+    "the database system is starting up",
+    "no more connections allowed",
+    "query_wait_timeout",
+    # Postgres' own wording for pg_terminate_backend, a restart or a failover cutting the session.
+    "terminating connection due to administrator command",
+)
+
+# A standby serving writes after failover: accepted then lost. Its own fingerprint, because the fix is different.
+DB_READONLY_SIGNATURES: tuple[str, ...] = ("in a read-only transaction",)
+
+# Deliberately NOT in DB_CONNECT_SIGNATURES: a statement timeout is as often one slow application query -- a missing
+# index, an N+1, an unbounded report -- as it is infrastructure, and folding it into the connection-failure issue
+# buries a real performance regression where nobody looks for it. Opt in per service with
+# `fingerprint_db_statement_timeouts` when the timeout is short enough to be purely an infra circuit-breaker.
+DB_STATEMENT_TIMEOUT_SIGNATURES: tuple[str, ...] = ("canceling statement due to statement timeout",)
+
 
 def hint_exception(hint: Hint | None) -> BaseException | None:
     """Best-effort exception object from a Sentry ``before_send`` hint."""
@@ -176,7 +208,24 @@ def chain(*filters: EventFilter) -> EventFilter:
     return _chained
 
 
+# Ready-made, because every service needs the same one: read-only first, since it is the more specific signature
+# and the first fingerprint set wins. One Postgres restart minted ~15 separate issues across the fleet without it.
+fingerprint_db_infra_errors: EventFilter = chain(
+    fingerprint_matching_signatures(DB_READONLY_SIGNATURES, ("db-infra", "postgres-read-only-transaction")),
+    fingerprint_matching_signatures(DB_CONNECT_SIGNATURES, ("db-infra", "postgres-connection-failure")),
+)
+
+# Opt-in companion, kept out of the chain above. Its own fingerprint, not the connection-failure one: a service
+# that decides its timeouts are infra still wants them separable from "the pool went away".
+fingerprint_db_statement_timeouts: EventFilter = fingerprint_matching_signatures(
+    DB_STATEMENT_TIMEOUT_SIGNATURES, ("db-infra", "postgres-statement-timeout")
+)
+
+
 __all__ = (
+    "DB_CONNECT_SIGNATURES",
+    "DB_READONLY_SIGNATURES",
+    "DB_STATEMENT_TIMEOUT_SIGNATURES",
     "IGNORED_TELEMETRY_LOGGERS",
     "Event",
     "EventFilter",
@@ -188,6 +237,8 @@ __all__ = (
     "event_text",
     "event_text_candidates",
     "exception_chain_text",
+    "fingerprint_db_infra_errors",
+    "fingerprint_db_statement_timeouts",
     "fingerprint_matching_signatures",
     "group_log_events_by_template",
     "hint_exception",

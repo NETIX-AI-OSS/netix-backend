@@ -11,8 +11,16 @@ from netix_backend.observability.logging import (
     logging_config,
 )
 from netix_backend.observability.otel import configure, is_configured, reset_for_tests
-from netix_backend.observability.sentry import configure_sentry
+from netix_backend.observability.sentry import (
+    BARE_INTERPRETER_ARGV0,
+    INTERACTIVE_SHELL_COMMANDS,
+    configure_sentry,
+    is_interactive_shell,
+)
 from netix_backend.observability.sentry_filters import (
+    DB_CONNECT_SIGNATURES,
+    DB_READONLY_SIGNATURES,
+    DB_STATEMENT_TIMEOUT_SIGNATURES,
     IGNORED_TELEMETRY_LOGGERS,
     chain,
     drop_cancelled_errors,
@@ -21,6 +29,8 @@ from netix_backend.observability.sentry_filters import (
     event_text,
     event_text_candidates,
     exception_chain_text,
+    fingerprint_db_infra_errors,
+    fingerprint_db_statement_timeouts,
     fingerprint_matching_signatures,
     group_log_events_by_template,
     hint_exception,
@@ -28,9 +38,14 @@ from netix_backend.observability.sentry_filters import (
 
 __all__ = (
     "configure_sentry",
+    "BARE_INTERPRETER_ARGV0",
     "CONSOLE_FORMAT",
+    "DB_CONNECT_SIGNATURES",
+    "DB_READONLY_SIGNATURES",
+    "DB_STATEMENT_TIMEOUT_SIGNATURES",
     "DEFAULT_LOGGERS",
     "IGNORED_TELEMETRY_LOGGERS",
+    "INTERACTIVE_SHELL_COMMANDS",
     "LOG_CONTEXT_KEY",
     "TRACE_ID_DEFAULTS",
     "TRACE_ID_FIELDS",
@@ -43,10 +58,13 @@ __all__ = (
     "event_text",
     "event_text_candidates",
     "exception_chain_text",
+    "fingerprint_db_infra_errors",
+    "fingerprint_db_statement_timeouts",
     "fingerprint_matching_signatures",
     "group_log_events_by_template",
     "hint_exception",
     "is_configured",
+    "is_interactive_shell",
     "log_context",
     "logging_config",
     "reset_for_tests",
