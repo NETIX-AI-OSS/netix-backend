@@ -2,7 +2,74 @@
 
 ## v1.5.0 — unreleased
 
+### Added
+
+Both halves of this come from the fleet-wide GlitchTip RCA across 18 backends, which found the
+two most valuable Sentry-hygiene controls living inside individual services rather than here.
+
+- **`netix_backend.observability.sentry.is_interactive_shell(argv=None)`** — true when the
+  process is a human at a prompt rather than a server or a worker, so an operator's typo never
+  alerts. Promoted from `user-management`, whose copy `ml-engine` and `data-service` had each
+  duplicated verbatim; the other 15 services had nothing. Missing shell guards accounted for
+  **86 of the fleet's 351 unresolved issues**, 50 of them in `cafm-backend` alone.
+
+  Also `INTERACTIVE_SHELL_COMMANDS` (`shell`, `shell_plus`, `dbshell`, unchanged) and
+  `BARE_INTERPRETER_ARGV0` (`"-c"`, `""`, `"-"`).
+
+  **The promoted version is broader than the three copies.** They tested `argv[1]` only, so a
+  bare `python -c "..."` — where `sys.argv` is just `["-c"]` and `len(argv) > 1` is already
+  False — could not be caught structurally. Five operator-typo issues leaked into
+  `data-service` through exactly that path, ten days after its own guard merged. Matching
+  `argv[0]` against `BARE_INTERPRETER_ARGV0` closes it and also covers the REPL and a script on
+  stdin. An empty `argv` stays False on purpose: muting Sentry for a real server process is the
+  worse failure, so an argv we cannot read is never assumed interactive.
+
+- **`netix_backend.observability.sentry_filters.fingerprint_db_infra_errors`** — a ready-made
+  `before_send` pinning every PgBouncer/libpq connect failure to
+  `("db-infra", "postgres-connection-failure")` and a post-failover standby write to
+  `("db-infra", "postgres-read-only-transaction")`. Promoted from `user-management`, the only
+  service that had it: it absorbed 246 events into a single issue while eight other services
+  fragmented the same four incidents into 15. Nothing is ever dropped, and a fingerprint the
+  event already carries always wins.
+
+  The signature lists ship alongside it as `DB_CONNECT_SIGNATURES` and `DB_READONLY_SIGNATURES`
+  so a service can extend rather than fork them. `DB_CONNECT_SIGNATURES` adds
+  `"terminating connection due to administrator command"` — Postgres' wording for
+  `pg_terminate_backend`, a restart or a failover, seen in `gateway-service` and absent from
+  every existing copy.
+
+- **`DB_STATEMENT_TIMEOUT_SIGNATURES` and `fingerprint_db_statement_timeouts`** — opt-in, and
+  deliberately **not** part of `fingerprint_db_infra_errors`.
+  `"canceling statement due to statement timeout"` is as often one slow application query — a
+  missing index, an N+1, an unbounded report — as it is infrastructure, and folding it into the
+  connection-failure issue would bury a real performance regression where nobody looks for it.
+  A service whose `statement_timeout` is short enough to be purely an infra circuit-breaker
+  opts in; the filter still uses its own `("db-infra", "postgres-statement-timeout")`
+  fingerprint rather than merging into the connection-failure one.
+
 ### Changed
+
+- **`configure_sentry(...)` now applies the shell guard itself**, via a new
+  `suppress_interactive_shell: bool = True` keyword. A suppressed call returns `False` and
+  short-circuits before the `sentry_sdk` import, exactly as `enabled=False` does.
+
+  **Why default-on.** The whole point of the promotion is that 15 services acquire the guard by
+  bumping the pin rather than by copying a predicate; an opt-in parameter would reproduce the
+  3-of-18 split the RCA found. This is the same reasoning as `prepare_threshold` below — the
+  safe value should be the one a service gets for free.
+
+  **Who is affected.** `user-management`, `ml-engine` and `data-service` already fold
+  `IS_INTERACTIVE_SHELL` into their own `SENTRY_ENABLED`; double-applying it is a no-op and
+  their behaviour is unchanged. The other 15 stop reporting from `manage.py shell` /
+  `shell_plus` / `dbshell` and from bare-interpreter runs on their next bump. No server, worker
+  or management-command process is affected — `runserver`, a uvicorn/gunicorn invocation,
+  `migrate`, `collectstatic` and a `manage.py run_worker`-style worker are covered by tests
+  precisely because muting one of those would be a serious regression.
+
+  **Opting out.** `suppress_interactive_shell=False` restores the v1.4.0 behaviour for a caller
+  that genuinely wants shell tracebacks reported. The signature is otherwise unchanged and
+  every existing keyword keeps its meaning, so a consumer that upgrades without editing its
+  settings keeps working.
 
 - **`netix_backend.database.postgres_database(...)`: `prepare_threshold` now defaults to `None`
   instead of `OMIT`.** Every alias the factory builds therefore carries
@@ -26,6 +93,20 @@
   **Opting out.** An alias that must keep prepared statements — or must keep having no
   `OPTIONS` key at all — passes `prepare_threshold=OMIT`, which drops the key and, with no
   `connect_timeout` / `options` set, the whole `OPTIONS` dict.
+
+### Migration notes
+
+- `user-management`, `ml-engine` and `data-service` delete their local `INTERACTIVE_SHELL_COMMANDS`,
+  `is_interactive_shell` and `IS_INTERACTIVE_SHELL` from `app/settings.py`. Either drop the
+  `and not IS_INTERACTIVE_SHELL` clause entirely and let `configure_sentry` do it, or keep the
+  explicit spelling as
+  `SENTRY_ENABLED = os.environ.get("SENTRY_ENABLED") == "TRUE" and not is_interactive_shell()`.
+- `user-management` deletes its local `_DB_CONNECT_SIGNATURES`, `_DB_READONLY_SIGNATURES` and
+  `fingerprint_db_infra_errors` and imports the last name from
+  `netix_backend.observability.sentry_filters`; the composed filter is equivalent, with the one
+  added signature. Its `sentry_before_send` chain is otherwise untouched.
+- The other 15 services add `fingerprint_db_infra_errors` to their `before_send` chain; the
+  shell guard needs no edit at all.
 
 ## v1.4.0 — 2026-09-11
 

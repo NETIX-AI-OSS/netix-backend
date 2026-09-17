@@ -2,12 +2,38 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from netix_backend.env import OMIT, _Omit
 
-__all__ = ("OMIT", "configure_sentry")
+__all__ = (
+    "BARE_INTERPRETER_ARGV0",
+    "INTERACTIVE_SHELL_COMMANDS",
+    "OMIT",
+    "configure_sentry",
+    "is_interactive_shell",
+)
+
+# A traceback typed at an operator prompt is operator error, not a service fault, and must not alert.
+INTERACTIVE_SHELL_COMMANDS: frozenset[str] = frozenset({"shell", "shell_plus", "dbshell"})
+
+# CPython's argv[0] when no script was named: "-c" for `python -c`, "" for the REPL, "-" for stdin.
+# The fleet copies tested argv[1] only, so `python -c "..."` -- where argv is just ["-c"] -- slipped past them.
+BARE_INTERPRETER_ARGV0: frozenset[str] = frozenset({"-c", "", "-"})
+
+
+def is_interactive_shell(argv: Sequence[str] | None = None) -> bool:
+    """True when *argv* (default ``sys.argv``) is a human at a prompt rather than a server or worker process."""
+    resolved = sys.argv if argv is None else argv
+    # An argv we cannot read is never assumed interactive: muting Sentry for a real server is the worse failure.
+    if not resolved:
+        return False
+    if resolved[0] in BARE_INTERPRETER_ARGV0:
+        return True
+    # `manage.py shell -c "..."` and friends; argv[1] is the management command, whatever follows it.
+    return len(resolved) > 1 and resolved[1] in INTERACTIVE_SHELL_COMMANDS
 
 
 def _integrations(
@@ -44,10 +70,15 @@ def configure_sentry(
     before_send: Callable[..., Any] | _Omit = OMIT,
     ignore_loggers: Iterable[str] = (),
     tags: Mapping[str, str] | None = None,
+    suppress_interactive_shell: bool = True,
     **init_kwargs: Any,
 ) -> bool:
     """Init Sentry and apply the ``ignore_logger`` tail; returns whether init actually ran."""
-    if not enabled:
+    # Default-on, and deliberately not folded into the caller's `enabled`: the three repos that already compute it
+    # keep working unchanged, and the fifteen that never did get the guard by bumping the pin rather than by
+    # copying a predicate. `suppress_interactive_shell=False` restores the v1.4.0 behaviour for a caller that
+    # genuinely wants shell tracebacks reported.
+    if not enabled or (suppress_interactive_shell and is_interactive_shell()):
         return False
     # Imported here, not at module scope: every service imports the SDK inside its own `if SENTRY_ENABLED` today,
     # so a module-level import would newly load sentry_sdk in every disabled and test process.

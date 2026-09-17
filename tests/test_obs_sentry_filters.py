@@ -6,7 +6,12 @@ import asyncio
 import logging
 from types import SimpleNamespace
 
+import pytest
+
 from netix_backend.observability.sentry_filters import (
+    DB_CONNECT_SIGNATURES,
+    DB_READONLY_SIGNATURES,
+    DB_STATEMENT_TIMEOUT_SIGNATURES,
     IGNORED_TELEMETRY_LOGGERS,
     chain,
     drop_cancelled_errors,
@@ -15,6 +20,8 @@ from netix_backend.observability.sentry_filters import (
     event_text,
     event_text_candidates,
     exception_chain_text,
+    fingerprint_db_infra_errors,
+    fingerprint_db_statement_timeouts,
     fingerprint_matching_signatures,
     group_log_events_by_template,
     hint_exception,
@@ -308,3 +315,61 @@ def test_ignored_telemetry_loggers_matches_the_fleet_tuple():
         "opentelemetry.exporter.otlp.proto.grpc.exporter",
         "opentelemetry.sdk.trace.export",
     )
+
+
+CONNECTION_FAILURE = ["db-infra", "postgres-connection-failure"]
+
+
+class TestDbInfraFingerprints:
+    """One shared-Postgres bounce minted ~15 issues across the fleet; these pin the whole fan-out to one."""
+
+    @pytest.mark.parametrize("signature", DB_CONNECT_SIGNATURES)
+    def test_every_connect_signature_pins_one_fingerprint(self, signature):
+        event = serialized(("OperationalError", f"psycopg.OperationalError: {signature} (host pgbouncer)"))
+        assert fingerprint_db_infra_errors(event)["fingerprint"] == CONNECTION_FAILURE
+
+    def test_the_two_signatures_the_rca_added(self):
+        # Seen in gateway-service and absent from every existing copy of the list.
+        assert "terminating connection due to administrator command" in DB_CONNECT_SIGNATURES
+        assert "canceling statement due to statement timeout" not in DB_CONNECT_SIGNATURES
+
+    def test_read_only_gets_its_own_fingerprint(self):
+        event = serialized(("InternalError", "cannot execute UPDATE in a read-only transaction"))
+        assert fingerprint_db_infra_errors(event)["fingerprint"] == ["db-infra", "postgres-read-only-transaction"]
+
+    def test_read_only_wins_over_a_connect_match(self):
+        """Read-only is the more specific diagnosis; it is checked first so a failover does not read as a bounce."""
+        text = "in a read-only transaction; the connection is closed"
+        assert fingerprint_db_infra_errors(serialized(("Error", text)))["fingerprint"] == [
+            "db-infra",
+            "postgres-read-only-transaction",
+        ]
+
+    def test_matches_through_the_hint_exception_chain(self):
+        exc = OSError("connection failed: connection to server at 10.0.0.5, port 6432 failed")
+        assert fingerprint_db_infra_errors({}, {"originalException": exc})["fingerprint"] == CONNECTION_FAILURE
+
+    def test_an_application_error_is_left_alone(self):
+        event = serialized(("ValueError", "asset 42 has no serial number"))
+        assert "fingerprint" not in fingerprint_db_infra_errors(event)
+
+    def test_an_existing_fingerprint_wins(self):
+        event = {"fingerprint": ["mine"], **serialized(("OperationalError", "the connection is closed"))}
+        assert fingerprint_db_infra_errors(event)["fingerprint"] == ["mine"]
+
+    def test_a_statement_timeout_is_not_a_connection_failure(self):
+        """The judgement call: a timeout is as often one slow query, so it must not land in the db-outage issue."""
+        event = serialized(("OperationalError", DB_STATEMENT_TIMEOUT_SIGNATURES[0]))
+        assert "fingerprint" not in fingerprint_db_infra_errors(event)
+
+    def test_the_opt_in_timeout_filter_uses_a_separate_fingerprint(self):
+        event = serialized(("OperationalError", f"psycopg.errors.QueryCanceled: {DB_STATEMENT_TIMEOUT_SIGNATURES[0]}"))
+        assert fingerprint_db_statement_timeouts(event)["fingerprint"] == ["db-infra", "postgres-statement-timeout"]
+
+    def test_the_opt_in_timeout_filter_ignores_everything_else(self):
+        assert "fingerprint" not in fingerprint_db_statement_timeouts(serialized(("ValueError", "boom")))
+
+    def test_the_lists_are_immutable_tuples(self):
+        # A service importing these must not be able to mutate the fleet-wide list for every other importer.
+        for signatures in (DB_CONNECT_SIGNATURES, DB_READONLY_SIGNATURES, DB_STATEMENT_TIMEOUT_SIGNATURES):
+            assert isinstance(signatures, tuple)

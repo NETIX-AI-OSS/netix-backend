@@ -28,10 +28,10 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `slow_view`, the opt-in assertions |
 | `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()` — OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
-| `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `IGNORED_TELEMETRY_LOGGERS` |
+| `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `fingerprint_db_infra_errors`, `fingerprint_db_statement_timeouts`, `IGNORED_TELEMETRY_LOGGERS`, `DB_CONNECT_SIGNATURES` / `DB_READONLY_SIGNATURES` / `DB_STATEMENT_TIMEOUT_SIGNATURES` |
 | `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key` — importable without Django configured |
 | `netix_backend.database` | `postgres_database()`, `replica_of()`, `FromEnv`, `OMIT` / `REQUIRED` — DATABASES factories, importable without Django configured (alias: `netix_backend.django.database`) |
-| `netix_backend.observability.sentry` | `configure_sentry()` — the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit |
+| `netix_backend.observability.sentry` | `configure_sentry()` — the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit; `is_interactive_shell()`, `INTERACTIVE_SHELL_COMMANDS`, `BARE_INTERPRETER_ARGV0` |
 | `netix_backend.django.org_scope` | `SuperuserOrgScopeMixin` — runtime `?organization=<id>` cross-org scoping for superusers, schema-free |
 | `netix_backend.django.org_scope_schema` | the four OpenAPI advertising helpers (`..._parameter`, `..._schema`, `..._autoschema`, `..._parameter_dict`), `description` always required |
 | `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec` — the two-phase test-settings bootstrap |
@@ -256,6 +256,41 @@ configure_sentry(
 
 `environment` has no default on purpose. `enabled` is computed by the caller, so gating
 spellings stay per-repo. `sentry_sdk` is imported only when `enabled` is true.
+
+Since v1.5.0 the call is also skipped when the process is an interactive shell — `manage.py
+shell` / `shell_plus` / `dbshell`, and any bare-interpreter run (`python -c …`, the REPL, a
+script on stdin). An operator's typo at a prompt is not a service fault, and it accounted for
+86 of the fleet's 351 unresolved issues while the guard lived in only three repos. Nothing to
+write at the call site; a service that genuinely wants shell tracebacks reported passes
+`suppress_interactive_shell=False`, and the predicate is importable on its own:
+
+```python
+from netix_backend.observability.sentry import is_interactive_shell
+
+SENTRY_ENABLED = os.environ.get("SENTRY_ENABLED") == "TRUE" and not is_interactive_shell()
+```
+
+## DB-infra fingerprints
+
+```python
+from netix_backend.observability.sentry_filters import chain, fingerprint_db_infra_errors
+
+before_send = chain(drop_cancelled_errors, fingerprint_db_infra_errors)
+```
+
+One shared-Postgres restart used to mint ~15 separate GlitchTip issues across the fleet — one
+per service, view and message variant. `fingerprint_db_infra_errors` pins every PgBouncer/libpq
+connect failure to `("db-infra", "postgres-connection-failure")` and a post-failover standby
+write to `("db-infra", "postgres-read-only-transaction")`, so the same outage arrives as one
+issue per failure mode. Events are never dropped, and a fingerprint the event already carries
+always wins.
+
+`canceling statement due to statement timeout` is deliberately **not** in the default list: it
+is as often one slow application query as it is infrastructure. A service whose
+`statement_timeout` is short enough to be purely an infra circuit-breaker opts in with
+`fingerprint_db_statement_timeouts`, which uses its own
+`("db-infra", "postgres-statement-timeout")` fingerprint rather than merging into the
+connection-failure issue.
 
 ## Test settings
 
