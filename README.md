@@ -28,7 +28,7 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `slow_view`, the opt-in assertions |
 | `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()` — OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
-| `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `fingerprint_db_infra_errors`, `fingerprint_db_statement_timeouts`, `IGNORED_TELEMETRY_LOGGERS`, `DB_CONNECT_SIGNATURES` / `DB_READONLY_SIGNATURES` / `DB_STATEMENT_TIMEOUT_SIGNATURES` |
+| `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `fingerprint_db_infra_errors`, `fingerprint_db_statement_timeouts`, `fingerprint_asgi_executor_teardown`, `IGNORED_TELEMETRY_LOGGERS`, `DB_CONNECT_SIGNATURES` / `DB_READONLY_SIGNATURES` / `DB_STATEMENT_TIMEOUT_SIGNATURES` / `ASGI_EXECUTOR_TEARDOWN_SIGNATURES` |
 | `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key` — importable without Django configured |
 | `netix_backend.database` | `postgres_database()`, `replica_of()`, `FromEnv`, `OMIT` / `REQUIRED` — DATABASES factories, importable without Django configured (alias: `netix_backend.django.database`) |
 | `netix_backend.observability.sentry` | `configure_sentry()` — the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit; `is_interactive_shell()`, `INTERACTIVE_SHELL_COMMANDS`, `BARE_INTERPRETER_ARGV0` |
@@ -291,6 +291,35 @@ is as often one slow application query as it is infrastructure. A service whose
 `fingerprint_db_statement_timeouts`, which uses its own
 `("db-infra", "postgres-statement-timeout")` fingerprint rather than merging into the
 connection-failure issue.
+
+## ASGI executor-teardown fingerprint
+
+```python
+from netix_backend.observability.sentry_filters import (
+    chain,
+    drop_cancelled_errors,
+    fingerprint_asgi_executor_teardown,
+    fingerprint_db_infra_errors,
+    group_log_events_by_template,
+)
+
+before_send = chain(
+    drop_cancelled_errors,
+    fingerprint_db_infra_errors,
+    fingerprint_asgi_executor_teardown,
+    group_log_events_by_template,  # last, or it claims the uvicorn log form first
+)
+```
+
+When a client disconnects before a response exists, Django's ASGI handler still sends
+`request_finished`, and its sync receivers hit an already-quit asgiref executor
+(asgiref#526): `RuntimeError: CurrentThreadExecutor already quit or is broken`. It is harmless
+per request, but it is reported twice — DjangoIntegration's capture and uvicorn's
+"Exception in ASGI application" log — and fragments into a new issue per view and logger.
+`fingerprint_asgi_executor_teardown` pins both shapes to
+`("asgi-shutdown", "current-thread-executor-quit")`, the fingerprint `user-management` already
+uses. It fingerprints rather than drops: the same text also covers a genuinely broken executor,
+which the message alone cannot distinguish.
 
 ## Test settings
 

@@ -47,6 +47,24 @@ two most valuable Sentry-hygiene controls living inside individual services rath
   opts in; the filter still uses its own `("db-infra", "postgres-statement-timeout")`
   fingerprint rather than merging into the connection-failure one.
 
+- **`fingerprint_asgi_executor_teardown` and `ASGI_EXECUTOR_TEARDOWN_SIGNATURES`** — a
+  ready-made `before_send` pinning asgiref#526's
+  `RuntimeError: CurrentThreadExecutor already quit or is broken` to
+  `("asgi-shutdown", "current-thread-executor-quit")`. A client that disconnects before a
+  response exists makes Django's ASGI handler run `request_finished`, whose sync receivers hit
+  an already-quit executor. Harmless per request, but reported twice — DjangoIntegration's
+  capture and uvicorn's "Exception in ASGI application" log — and fragmented into a new
+  GlitchTip issue per view and logger (`ml-engine` ML-ENGINE-4M/4N, `asset-service`
+  ASSET-SERVICE-OVN/OVO). Promoted from `user-management`, whose fingerprint it reuses verbatim
+  so its existing issue keeps absorbing the events.
+
+  **Fingerprinted, not dropped.** Following `fingerprint_db_infra_errors`: library-shipped
+  signature lists only ever regroup, and dropping by signature stays a service-local decision
+  (`drop_matching_signatures`). The same message also covers a genuinely *broken* executor,
+  which text alone cannot tell apart from the teardown race, so one visible issue is the safer
+  default. Chain it **before** `group_log_events_by_template`, or the uvicorn log form lands
+  in the generic `["uvicorn.error", "Exception in ASGI application", "RuntimeError"]` issue.
+
 ### Changed
 
 - **`configure_sentry(...)` now applies the shell guard itself**, via a new
@@ -107,6 +125,11 @@ two most valuable Sentry-hygiene controls living inside individual services rath
   added signature. Its `sentry_before_send` chain is otherwise untouched.
 - The other 15 services add `fingerprint_db_infra_errors` to their `before_send` chain; the
   shell guard needs no edit at all.
+- `user-management` deletes its local `_ASGI_EXECUTOR_TEARDOWN_SIGNATURES` and
+  `fingerprint_asgi_executor_teardown` and imports the latter from
+  `netix_backend.observability.sentry_filters`; the fingerprint is identical. Every other
+  service (notably `ml-engine` and `asset-service`) adds it to its `before_send` chain ahead of
+  `group_log_events_by_template`.
 
 ## v1.4.0 — 2026-09-11
 
