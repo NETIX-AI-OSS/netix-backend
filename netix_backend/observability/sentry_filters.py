@@ -53,6 +53,13 @@ DB_READONLY_SIGNATURES: tuple[str, ...] = ("in a read-only transaction",)
 # `fingerprint_db_statement_timeouts` when the timeout is short enough to be purely an infra circuit-breaker.
 DB_STATEMENT_TIMEOUT_SIGNATURES: tuple[str, ...] = ("canceling statement due to statement timeout",)
 
+# asgiref#526: a client that disconnects before a response exists makes Django's ASGI handler send
+# request_finished, whose sync receivers hit an already-quit CurrentThreadExecutor. Harmless per request, but it
+# arrives twice -- DjangoIntegration's capture and uvicorn's "Exception in ASGI application" log -- and fragments by
+# view and logger. Matched on message text because the logger is not stable. Fingerprinted rather than dropped: the
+# same RuntimeError text also covers a genuinely *broken* executor, which text alone cannot tell apart.
+ASGI_EXECUTOR_TEARDOWN_SIGNATURES: tuple[str, ...] = ("CurrentThreadExecutor already quit or is broken",)
+
 
 def hint_exception(hint: Hint | None) -> BaseException | None:
     """Best-effort exception object from a Sentry ``before_send`` hint."""
@@ -221,8 +228,16 @@ fingerprint_db_statement_timeouts: EventFilter = fingerprint_matching_signatures
     DB_STATEMENT_TIMEOUT_SIGNATURES, ("db-infra", "postgres-statement-timeout")
 )
 
+# Same fingerprint as user-management's local copy, so its existing GlitchTip issue keeps absorbing the events.
+# Chain it before group_log_events_by_template, or uvicorn's log form lands in the generic
+# ["uvicorn.error", "Exception in ASGI application", "RuntimeError"] issue first.
+fingerprint_asgi_executor_teardown: EventFilter = fingerprint_matching_signatures(
+    ASGI_EXECUTOR_TEARDOWN_SIGNATURES, ("asgi-shutdown", "current-thread-executor-quit")
+)
+
 
 __all__ = (
+    "ASGI_EXECUTOR_TEARDOWN_SIGNATURES",
     "DB_CONNECT_SIGNATURES",
     "DB_READONLY_SIGNATURES",
     "DB_STATEMENT_TIMEOUT_SIGNATURES",
@@ -237,6 +252,7 @@ __all__ = (
     "event_text",
     "event_text_candidates",
     "exception_chain_text",
+    "fingerprint_asgi_executor_teardown",
     "fingerprint_db_infra_errors",
     "fingerprint_db_statement_timeouts",
     "fingerprint_matching_signatures",

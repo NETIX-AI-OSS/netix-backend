@@ -18,6 +18,7 @@ from netix_backend.observability.sentry import (
     is_interactive_shell,
 )
 from netix_backend.observability.sentry_filters import (
+    ASGI_EXECUTOR_TEARDOWN_SIGNATURES,
     DB_CONNECT_SIGNATURES,
     DB_READONLY_SIGNATURES,
     DB_STATEMENT_TIMEOUT_SIGNATURES,
@@ -29,6 +30,7 @@ from netix_backend.observability.sentry_filters import (
     event_text,
     event_text_candidates,
     exception_chain_text,
+    fingerprint_asgi_executor_teardown,
     fingerprint_db_infra_errors,
     fingerprint_db_statement_timeouts,
     fingerprint_matching_signatures,
@@ -38,6 +40,7 @@ from netix_backend.observability.sentry_filters import (
 
 __all__ = (
     "configure_sentry",
+    "ASGI_EXECUTOR_TEARDOWN_SIGNATURES",
     "BARE_INTERPRETER_ARGV0",
     "CONSOLE_FORMAT",
     "DB_CONNECT_SIGNATURES",
@@ -58,6 +61,7 @@ __all__ = (
     "event_text",
     "event_text_candidates",
     "exception_chain_text",
+    "fingerprint_asgi_executor_teardown",
     "fingerprint_db_infra_errors",
     "fingerprint_db_statement_timeouts",
     "fingerprint_matching_signatures",

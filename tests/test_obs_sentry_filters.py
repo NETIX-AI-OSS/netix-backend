@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from netix_backend.observability.sentry_filters import (
+    ASGI_EXECUTOR_TEARDOWN_SIGNATURES,
     DB_CONNECT_SIGNATURES,
     DB_READONLY_SIGNATURES,
     DB_STATEMENT_TIMEOUT_SIGNATURES,
@@ -20,6 +21,7 @@ from netix_backend.observability.sentry_filters import (
     event_text,
     event_text_candidates,
     exception_chain_text,
+    fingerprint_asgi_executor_teardown,
     fingerprint_db_infra_errors,
     fingerprint_db_statement_timeouts,
     fingerprint_matching_signatures,
@@ -373,3 +375,73 @@ class TestDbInfraFingerprints:
         # A service importing these must not be able to mutate the fleet-wide list for every other importer.
         for signatures in (DB_CONNECT_SIGNATURES, DB_READONLY_SIGNATURES, DB_STATEMENT_TIMEOUT_SIGNATURES):
             assert isinstance(signatures, tuple)
+
+
+EXECUTOR_TEARDOWN = ["asgi-shutdown", "current-thread-executor-quit"]
+EXECUTOR_MESSAGE = "CurrentThreadExecutor already quit or is broken"
+
+
+def _executor_exc_info():
+    try:
+        raise RuntimeError(EXECUTOR_MESSAGE)
+    except RuntimeError as exc:
+        return (RuntimeError, exc, exc.__traceback__)
+
+
+class TestAsgiExecutorTeardownFingerprint:
+    """asgiref#526 arrives twice per disconnect and fragments per view/logger; both shapes must land in one issue."""
+
+    def test_djangointegration_exception_event(self):
+        # DjangoIntegration's capture: exc_info in the hint, the serialized value on the event, a per-view transaction.
+        exc_info = _executor_exc_info()
+        event = {"transaction": "/api/v1/assets/", **serialized(("RuntimeError", EXECUTOR_MESSAGE))}
+        assert fingerprint_asgi_executor_teardown(event, {"exc_info": exc_info})["fingerprint"] == EXECUTOR_TEARDOWN
+
+    def test_uvicorn_logger_message_event(self):
+        # uvicorn's `logger.error("Exception in ASGI application", exc_info=...)` through LoggingIntegration.
+        exc_info = _executor_exc_info()
+        record = logging.LogRecord(
+            "uvicorn.error", logging.ERROR, __file__, 1, "Exception in ASGI application\n", (), exc_info
+        )
+        event = {
+            "logger": "uvicorn.error",
+            "logentry": {"message": "Exception in ASGI application\n", "params": []},
+            **serialized(("RuntimeError", EXECUTOR_MESSAGE)),
+        }
+        hint = {"exc_info": exc_info, "log_record": record}
+        assert fingerprint_asgi_executor_teardown(event, hint)["fingerprint"] == EXECUTOR_TEARDOWN
+
+    def test_matches_on_the_serialized_value_alone(self):
+        # A logging-integration event can reach before_send with no exc_info in the hint.
+        assert fingerprint_asgi_executor_teardown(serialized(("RuntimeError", EXECUTOR_MESSAGE)))["fingerprint"] == (
+            EXECUTOR_TEARDOWN
+        )
+
+    def test_both_shapes_share_one_fingerprint_ahead_of_the_template_grouper(self):
+        """In chain order the uvicorn log must not fall into the generic uvicorn.error/RuntimeError issue."""
+        before_send = chain(drop_cancelled_errors, fingerprint_asgi_executor_teardown, group_log_events_by_template)
+        exc_info = _executor_exc_info()
+        record = logging.LogRecord(
+            "uvicorn.error", logging.ERROR, __file__, 1, "Exception in ASGI application\n", (), exc_info
+        )
+        django_event = before_send(serialized(("RuntimeError", EXECUTOR_MESSAGE)), {"exc_info": exc_info})
+        uvicorn_event = before_send(
+            {"logger": "uvicorn.error", **serialized(("RuntimeError", EXECUTOR_MESSAGE))},
+            {"exc_info": exc_info, "log_record": record},
+        )
+        assert django_event["fingerprint"] == uvicorn_event["fingerprint"] == EXECUTOR_TEARDOWN
+
+    def test_is_not_dropped(self):
+        # Fingerprinted, never dropped: the same text also covers a genuinely broken executor.
+        assert fingerprint_asgi_executor_teardown(serialized(("RuntimeError", EXECUTOR_MESSAGE))) is not None
+
+    def test_an_unrelated_runtime_error_is_left_alone(self):
+        event = serialized(("RuntimeError", "dictionary changed size during iteration"))
+        assert "fingerprint" not in fingerprint_asgi_executor_teardown(event)
+
+    def test_an_existing_fingerprint_wins(self):
+        event = {"fingerprint": ["mine"], **serialized(("RuntimeError", EXECUTOR_MESSAGE))}
+        assert fingerprint_asgi_executor_teardown(event)["fingerprint"] == ["mine"]
+
+    def test_signature_matches_asgiref_wording(self):
+        assert ASGI_EXECUTOR_TEARDOWN_SIGNATURES == (EXECUTOR_MESSAGE,)
