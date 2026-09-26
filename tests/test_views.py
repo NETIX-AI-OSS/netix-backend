@@ -379,11 +379,28 @@ def test_destroy_soft_deletes_once(client: APIClient, widget: ScopedWidget) -> N
 def test_repeat_delete_is_a_404_unless_the_view_opts_out(client: APIClient, db: Any) -> None:
     widget = ScopedWidget.objects.create(label="gone", organization_id=TENANT, is_deleted=True)
     assert client.delete(f"/api/keep-deleted/{widget.pk}/", **envoy()).status_code == 204
-    assert client.delete(f"/api/repeat-delete/{widget.pk}/", **envoy()).status_code == 404
+    legacy = client.delete(f"/api/repeat-delete/{widget.pk}/", **envoy())
+    assert legacy.status_code == 404
+    assert legacy.content == b""
+
+
+@override_settings(NETIX_ERRORS_CONSISTENT_ENVELOPE=True)
+def test_repeat_delete_uses_consistent_error_envelope(client: APIClient, db: Any) -> None:
+    widget = ScopedWidget.objects.create(label="gone", organization_id=TENANT, is_deleted=True)
+    response = client.delete(f"/api/repeat-delete/{widget.pk}/", **envoy())
+    assert response.status_code == 404
+    assert response.json() == {"status_code": 404, "messages": ["404: Resource not found"]}
 
 
 def test_deleting_a_missing_row_is_a_404(client: APIClient, db: Any) -> None:
     assert client.delete("/api/widgets/4242/", **envoy()).status_code == 404
+
+
+@override_settings(NETIX_ERRORS_CONSISTENT_ENVELOPE=True)
+def test_deleting_a_missing_row_uses_consistent_error_envelope(client: APIClient, db: Any) -> None:
+    response = client.delete("/api/widgets/4242/", **envoy())
+    assert response.status_code == 404
+    assert response.json() == {"status_code": 404, "messages": ["404: Resource not found"]}
 
 
 def test_soft_delete_validation_blocks_the_delete(client: APIClient, db: Any) -> None:

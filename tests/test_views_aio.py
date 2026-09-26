@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import pytest
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from netix_backend.django import views_aio
@@ -87,6 +88,14 @@ def test_async_destroy_soft_deletes_and_then_404s(client: APIClient, widget: Sco
     widget.refresh_from_db()
     assert widget.is_deleted is True
     assert client.delete(f"/api/async-widgets/{widget.pk}/", **ENVOY).status_code == 404
+
+
+@override_settings(NETIX_ERRORS_CONSISTENT_ENVELOPE=True)
+def test_async_repeat_delete_uses_consistent_error_envelope(client: APIClient, widget: ScopedWidget) -> None:
+    assert client.delete(f"/api/async-widgets/{widget.pk}/", **ENVOY).status_code == 204
+    response = client.delete(f"/api/async-widgets/{widget.pk}/", **ENVOY)
+    assert response.status_code == 404
+    assert response.json() == {"status_code": 404, "messages": ["404: Resource not found"]}
 
 
 def test_async_destroy_of_a_missing_row_is_a_404(client: APIClient, db: Any) -> None:
