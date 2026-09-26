@@ -61,6 +61,15 @@ services today — declare `model_queryset` to get organization scoping.
 Behavioral knobs default to what the fleet ships today; behavior changes are opt-in per service.
 See `CHANGELOG.md` for migration notes per release.
 
+For a uniform DRF error response, set `NETIX_ERRORS_CONSISTENT_ENVELOPE = True` in
+the consuming service. The response is `{"status_code": number, "messages": string[]}`
+for validation, authentication, permission, missing-resource and opted-in database
+errors. Nested validation errors include their field path, such as
+`"members[0].email: bad address"`. This switch takes precedence over the legacy
+`NETIX_ERRORS_FLATTENER`, `NETIX_ERRORS_STRINGIFIED`,
+`NETIX_ERRORS_HTTP404_AS_LIST`, and `NETIX_ERRORS_NON_VALIDATION_AS_LIST` settings.
+The default remains unchanged so consumers can deploy a compatible frontend first.
+
 ## ASGI entrypoints
 
 ```python
