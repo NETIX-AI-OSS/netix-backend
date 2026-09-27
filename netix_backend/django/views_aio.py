@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 from adrf import viewsets as adrf_viewsets
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.db import transaction
 from django.db.models import QuerySet
 from django.http import Http404
@@ -36,6 +37,8 @@ class AsyncSoftDeleteMixin(SoftDeleteMixin):
             instance = await self.aget_object()  # type: ignore[attr-defined]
             await sync_to_async(self._atomic_soft_delete, thread_sensitive=True)(instance)
         except Http404:
+            if getattr(settings, "NETIX_ERRORS_CONSISTENT_ENVELOPE", False):
+                raise
             return Response(status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
 

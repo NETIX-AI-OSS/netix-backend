@@ -152,6 +152,35 @@ def build_messages(exc: Exception, *, flattener: Flattener | str | None = None) 
     return [str(detail)]
 
 
+def _iter_consistent_messages(value: Any, path: str = "") -> Iterator[str]:
+    """Walk DRF error details without exposing Python list or dict representations."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            # DRF's generic keys describe the error, rather than a form field.
+            child_path = path if key in {"detail", "message"} else f"{path}.{key}" if path else str(key)
+            yield from _iter_consistent_messages(item, child_path)
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            child_path = f"{path}[{index}]" if path and isinstance(item, (dict, list, tuple)) else path
+            yield from _iter_consistent_messages(item, child_path)
+    elif value is not None:
+        message = str(value)
+        if message:
+            yield f"{path}: {message}" if path else message
+
+
+def consistent_messages(exc: Exception) -> list[str]:
+    """Return a flat list for the opt-in, consistent public error envelope."""
+    if isinstance(exc, Http404):
+        return [HTTP404_MESSAGE]
+    detail: Any = getattr(exc, "detail", None)
+    if detail is None:
+        detail = getattr(exc, "message", None)
+    if detail is None:
+        detail = str(exc)
+    return list(_iter_consistent_messages(detail))
+
+
 def render_messages(messages: list[str], *, stringified: bool | None = None, as_list: bool = True) -> str | list[str]:
     """The single place the wire shape of `messages` is decided."""
     if not as_list:
@@ -173,16 +202,20 @@ def _as_list_for(exc: Exception) -> bool:
 def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
     """DRF EXCEPTION_HANDLER: delegates to DRF first, then rewrites the body to the NETIX envelope."""
     response = exception_handler(exc, context)
+    consistent = bool(getattr(settings, "NETIX_ERRORS_CONSISTENT_ENVELOPE", False))
 
     if response is None:
         db_unavailable = getattr(settings, "NETIX_ERRORS_DB_UNAVAILABLE_503", False)
         if db_unavailable and isinstance(exc, (DatabaseError, OperationalError)):
             logger.exception("Unhandled database error during request")
-            return Response({"status_code": 503, "messages": DB_UNAVAILABLE_MESSAGE}, status=503)
+            messages = [DB_UNAVAILABLE_MESSAGE] if consistent else DB_UNAVAILABLE_MESSAGE
+            return Response({"status_code": 503, "messages": messages}, status=503)
         return None
 
     response.data = {
         "status_code": response.status_code,
-        "messages": render_messages(build_messages(exc), as_list=_as_list_for(exc)),
+        "messages": consistent_messages(exc)
+        if consistent
+        else render_messages(build_messages(exc), as_list=_as_list_for(exc)),
     }
     return response

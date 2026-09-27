@@ -29,6 +29,7 @@ from netix_backend.django.exceptions import (
     FLATTENERS,
     HTTP404_MESSAGE,
     build_messages,
+    consistent_messages,
     custom_exception_handler,
     first_error,
     flatten_first_error,
@@ -385,6 +386,72 @@ class TestDatabaseUnavailable:
         response = custom_exception_handler(DatabaseError("bad sql"), {})
         assert response is not None
         assert response.status_code == 400
+
+
+class TestConsistentEnvelope:
+    """The new contract is opt-in until every frontend can parse JSON arrays."""
+
+    @pytest.fixture(autouse=True)
+    def _pins(self) -> Iterator[None]:
+        with override_settings(
+            NETIX_ERRORS_CONSISTENT_ENVELOPE=True,
+            NETIX_ERRORS_STRINGIFIED=True,
+            NETIX_ERRORS_FLATTENER="keyed",
+            NETIX_ERRORS_NON_VALIDATION_AS_LIST=False,
+            NETIX_ERRORS_HTTP404_AS_LIST=False,
+            NETIX_ERRORS_DB_UNAVAILABLE_503=True,
+        ):
+            yield
+
+    def test_nested_validation_error_keeps_field_path_and_every_message(self) -> None:
+        exc = ValidationError(
+            {"name": ["required", "invalid"], "members": [{"email": ["bad address"]}, {"email": ["missing"]}]}
+        )
+        response = custom_exception_handler(exc, {})
+        assert response is not None
+        assert response.data == {
+            "status_code": 400,
+            "messages": [
+                "name: required",
+                "name: invalid",
+                "members[0].email: bad address",
+                "members[1].email: missing",
+            ],
+        }
+
+    def test_generic_message_key_is_not_treated_as_a_field(self) -> None:
+        response = custom_exception_handler(ValidationError({"message": ["first", "second"]}), {})
+        assert response is not None
+        assert response.data == {"status_code": 400, "messages": ["first", "second"]}
+
+    def test_empty_values_are_omitted(self) -> None:
+        exc = RuntimeError("ignored")
+        exc.detail = {"name": ["", None, "required"]}
+        assert consistent_messages(exc) == ["name: required"]
+
+    def test_exception_message_and_string_fallbacks(self) -> None:
+        assert consistent_messages(ExcWithMessage("oops")) == ["oops"]
+        assert consistent_messages(RuntimeError("kaboom")) == ["kaboom"]
+
+    @pytest.mark.parametrize(
+        ("exc", "status", "messages"),
+        [
+            (NotAuthenticated(), 401, ["Authentication credentials were not provided."]),
+            (PermissionDenied(), 403, ["You do not have permission to perform this action."]),
+            (Http404("nope"), 404, [HTTP404_MESSAGE]),
+            (APIException(detail="generic failure"), 500, ["generic failure"]),
+        ],
+    )
+    def test_non_validation_envelopes_are_arrays(self, exc: Exception, status: int, messages: list[str]) -> None:
+        response = custom_exception_handler(exc, {})
+        assert response is not None
+        assert response.data == {"status_code": status, "messages": messages}
+        assert response.status_code == status
+
+    def test_database_unavailable_uses_the_same_shape(self) -> None:
+        response = custom_exception_handler(DatabaseError("connection refused"), {})
+        assert response is not None
+        assert response.data == {"status_code": 503, "messages": [DB_UNAVAILABLE_MESSAGE]}
 
 
 class TestPerRepoFlattenerPins:

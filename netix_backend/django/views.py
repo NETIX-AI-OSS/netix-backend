@@ -361,6 +361,8 @@ class SoftDeleteMixin:
             instance = self.get_object()  # type: ignore[attr-defined]
             self.soft_delete_instance(instance)
         except Http404:
+            if getattr(settings, "NETIX_ERRORS_CONSISTENT_ENVELOPE", False):
+                raise
             return Response(status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
