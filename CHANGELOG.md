@@ -12,8 +12,10 @@
   and a decommissioned service drops out by itself. Heartbeat failures log at WARNING only, so an
   update-service outage never raises an error event from every pod once a minute.
 - **`netix_backend.discovery`** — `service_url(name, fallback_env)` resolves a peer's internal base URL
-  from update-service's `/api/registry/discovery/` (override, else live registration), cached for 60s
-  per process and kept through a failed fetch, falling back to the legacy `*_SVC_URL` variable.
+  from update-service's `/api/registry/discovery/` (override, else live registration), falling back to the
+  legacy `*_SVC_URL` variable. `frontend_origins()` returns the public origins of registered frontends.
+  Only a process's first lookup blocks; the cache then refreshes every 60s on a background thread
+  (CORS checks call it from the event loop) and keeps its last answer through a failed fetch.
 - **`build_client(..., registry_name=...)`** prefers the discovered URL and includes the resolved URL in
   its cache key, so an operator override reaches a running process without a restart.
   `build_static_client` resolves `static-service` the same way before `STATIC_SVC_URL`.

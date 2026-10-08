@@ -1,7 +1,8 @@
-"""Registry discovery: the derived URL, the per-process cache, outage tolerance and the env fallback."""
+"""Registry discovery: the derived URL, frontend origins, the background-refreshed cache, outages, env fallback."""
 
 import io
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,10 +16,30 @@ ENVIRONMENT = {
 }
 REGISTRY = {
     "services": [
-        {"name": "asset-service", "internal_base_url": "http://asset-service.backend:8000"},
-        {"name": "half-registered", "internal_base_url": None},
+        {
+            "name": "asset-service",
+            "kind": "backend",
+            "base_url": "https://asset.api.example.com",
+            "internal_base_url": "http://asset-service.backend:8000",
+        },
+        {"name": "half-registered", "kind": "backend", "base_url": None, "internal_base_url": None},
+        {
+            "name": "cafm-v2-ui",
+            "kind": "frontend",
+            "base_url": "https://cafm.example.com/",
+            "internal_base_url": "http://cafm-v2-ui.frontend:8080",
+        },
+        {"name": "pinned-ui", "kind": "frontend", "base_url": None, "internal_base_url": "http://pinned.frontend:80"},
     ]
 }
+
+
+class _InlineThread:
+    def __init__(self, *, target, **_kwargs):
+        self.target = target
+
+    def start(self):
+        self.target()
 
 
 @pytest.fixture(autouse=True)
@@ -60,33 +81,46 @@ def test_a_registered_service_wins_over_its_configmap_variable(registry):
 def test_an_unregistered_service_falls_back_to_the_env(registry):
     assert discovery.service_url("half-registered", "ASSET_SVC_URL") == "http://asset-from-configmap:8000"
     assert discovery.service_url("half-registered") is None
-    assert discovery.discovered_urls() == {"asset-service": "http://asset-service.backend:8000"}
+    assert set(discovery.discovered_urls()) == {"asset-service", "cafm-v2-ui", "pinned-ui"}
 
 
-def test_the_registry_is_fetched_once_per_cache_window(monkeypatch, registry):
-    clock = iter([0.0, 1.0, 1.0, discovery.CACHE_SECONDS + 1, discovery.CACHE_SECONDS + 1])
+def test_frontend_origins_are_the_public_origins_of_registered_frontends(registry):
+    assert discovery.frontend_origins() == frozenset({"https://cafm.example.com"})
+
+
+def test_only_the_first_lookup_fetches_inline_and_later_ones_refresh_in_the_background(monkeypatch, registry):
+    clock = iter([0.0, 1.0, discovery.CACHE_SECONDS + 1])
     monkeypatch.setattr(discovery.time, "monotonic", lambda: next(clock))
+    started = []
+    monkeypatch.setattr(
+        discovery,
+        "threading",
+        SimpleNamespace(Thread=lambda **kwargs: started.append(kwargs) or _InlineThread(**kwargs)),
+    )
 
     discovery.discovered_urls()
     discovery.discovered_urls()
+    assert (len(registry), len(started)) == (1, 0)
+
     discovery.discovered_urls()
+    assert (len(registry), len(started)) == (2, 1)
+    assert started[0]["daemon"] is True
 
-    assert len(registry) == 2
 
-
-def test_a_failed_fetch_keeps_the_last_known_urls(monkeypatch, registry, caplog):
-    clock = iter([0.0, 0.0, discovery.CACHE_SECONDS, discovery.CACHE_SECONDS])
+def test_a_failed_refresh_keeps_the_last_known_urls(monkeypatch, registry, caplog):
+    clock = iter([0.0, discovery.CACHE_SECONDS, discovery.CACHE_SECONDS + 1])
     monkeypatch.setattr(discovery.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(discovery, "threading", SimpleNamespace(Thread=_InlineThread))
     discovery.discovered_urls()
 
     def down(*_args, **_kwargs):
         raise OSError("update-service down")
 
     monkeypatch.setattr(discovery, "urlopen", down)
-
     with caplog.at_level("WARNING"):
         assert discovery.service_url("asset-service") == "http://asset-service.backend:8000"
     assert "Service discovery failed" in caplog.text
+    assert discovery.frontend_origins() == frozenset({"https://cafm.example.com"})
 
 
 def test_an_unconfigured_service_never_calls_update_service(monkeypatch):
