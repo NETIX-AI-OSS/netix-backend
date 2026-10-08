@@ -217,6 +217,15 @@ def test_build_static_client_reads_its_configuration_from_the_env():
         explicit.close()
 
 
+def test_build_static_client_prefers_the_registry(monkeypatch):
+    monkeypatch.setattr(static, "service_url", {"static-service": "http://static-service.backend:8002"}.get)
+    client = static.build_static_client()
+    try:
+        assert str(client.base_url) == "http://static-service.backend:8002"
+    finally:
+        client.close()
+
+
 def test_build_static_client_requires_the_service_url(monkeypatch):
     monkeypatch.delenv("STATIC_SVC_URL")
     with pytest.raises(ConfigurationError, match="STATIC_SVC_URL"):

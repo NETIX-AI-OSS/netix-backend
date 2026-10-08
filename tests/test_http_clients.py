@@ -148,3 +148,23 @@ def test_the_cache_key_covers_the_resolved_env_keys(monkeypatch):
     assert default.kwargs["headers"]["Authorization"] == "asset-token"
     assert borrowed.kwargs["headers"]["Authorization"] == "cafm-token"
     assert clients.build_client(FakeClient, service="asset") is default
+
+
+def test_a_registry_name_prefers_the_discovered_url_and_rebuilds_when_it_moves(monkeypatch):
+    urls = {"asset-service": "http://asset-service.backend:8000"}
+    monkeypatch.setattr(clients, "service_url", urls.get)
+
+    first = clients.build_client(FakeClient, service="ASSET", registry_name="asset-service")
+    assert first.kwargs["base_url"] == "http://asset-service.backend:8000"
+    assert clients.build_client(FakeClient, service="ASSET", registry_name="asset-service") is first
+
+    urls["asset-service"] = "http://asset-canary.backend:8000"
+    moved = clients.build_client(FakeClient, service="ASSET", registry_name="asset-service")
+    assert moved is not first
+    assert moved.kwargs["base_url"] == "http://asset-canary.backend:8000"
+
+
+def test_an_undiscovered_registry_name_falls_back_to_the_env(monkeypatch):
+    monkeypatch.setattr(clients, "service_url", lambda _name: None)
+    client = clients.build_client(FakeClient, service="ASSET", registry_name="asset-service")
+    assert client.kwargs["base_url"] == "https://asset.internal"

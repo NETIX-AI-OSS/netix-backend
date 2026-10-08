@@ -11,7 +11,7 @@ from typing import Final
 from urllib.request import Request, urlopen
 
 from netix_backend.asgi.types import ASGIApp, Receive, Scope, Send, StartResponse, WSGIApp, WSGIEnvironment
-from netix_backend.env import env_bool, env_str
+from netix_backend.env import env_bool, env_float, env_str
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,10 @@ RETRY_DELAYS: Final[tuple[float, ...]] = (0, 1, 2, 4, 8, 16, 30, 60)
 
 REGISTRATION_TIMEOUT_SECONDS = 5
 
+# Re-PUT cadence that keeps the registration inside update-service's liveness TTL; 0 disables the heartbeat.
+HEARTBEAT_ENV = "SERVICE_REGISTRATION_HEARTBEAT_SECONDS"
+HEARTBEAT_SECONDS = 60.0
+
 # The registry payload is entirely env-driven; no service contributes code to its own identity.
 REGISTRATION_FIELDS: Final[Mapping[str, str]] = {
     "name": "SERVICE_NAME",
@@ -39,6 +43,9 @@ REGISTRATION_FIELDS: Final[Mapping[str, str]] = {
 
 _registration_lock = threading.Lock()
 _registration_state: Final[dict[str, bool]] = {"started": False}
+_heartbeat_stop: Final[dict[str, threading.Event]] = {"event": threading.Event()}
+# Bound at import: consumer tests swap threading.Thread for an inline fake, under which this loop would never return.
+_HeartbeatThread = threading.Thread
 
 
 def registration_enabled() -> bool:
@@ -55,6 +62,8 @@ def reset_registration_state() -> None:
     """Release the once-per-process latch; the hook consumer tests need now that the latch is shared."""
     with _registration_lock:
         _registration_state["started"] = False
+        _heartbeat_stop["event"].set()
+        _heartbeat_stop["event"] = threading.Event()
 
 
 def registration_payload() -> tuple[str, str, dict[str, str]] | None:
@@ -76,12 +85,7 @@ def registration_payload() -> tuple[str, str, dict[str, str]] | None:
     return registration_url, token, values
 
 
-def register(retry_delays: Sequence[float] = RETRY_DELAYS, *, timeout: float = REGISTRATION_TIMEOUT_SECONDS) -> bool:
-    """PUT this service's identity to update-service, retrying along *retry_delays*; True once it is accepted."""
-    configuration = registration_payload()
-    if configuration is None:
-        return False
-
+def _put(configuration: tuple[str, str, dict[str, str]], timeout: float) -> None:
     registration_url, token, payload = configuration
     request = Request(
         registration_url,
@@ -89,34 +93,72 @@ def register(retry_delays: Sequence[float] = RETRY_DELAYS, *, timeout: float = R
         headers={"Content-Type": "application/json", TOKEN_HEADER: token},
         method="PUT",
     )
+    # The URL is operator-configured, and stdlib urllib keeps httpx out of the asgi/wsgi import path.
+    with urlopen(request, timeout=timeout) as response:
+        if not 200 <= response.status < 300:
+            raise OSError(f"update-service returned HTTP {response.status}")
+
+
+def register(retry_delays: Sequence[float] = RETRY_DELAYS, *, timeout: float = REGISTRATION_TIMEOUT_SECONDS) -> bool:
+    """PUT this service's identity to update-service, retrying along *retry_delays*; True once it is accepted."""
+    configuration = registration_payload()
+    if configuration is None:
+        return False
+
     for attempt, delay in enumerate(retry_delays, start=1):
         if delay:
             time.sleep(delay)
         try:
-            # The URL is operator-configured, and stdlib urllib keeps httpx out of the asgi/wsgi import path.
-            with urlopen(request, timeout=timeout) as response:
-                if 200 <= response.status < 300:
-                    logger.info("Registered service %s with update-service", payload["name"])
-                    return True
-                raise OSError(f"update-service returned HTTP {response.status}")
+            _put(configuration, timeout)
         except Exception:
-            # Every failure is retryable here, including the non-2xx raised just above.
+            # Every failure is retryable here, including a non-2xx.
             if attempt == len(retry_delays):
                 logger.exception("Service registration failed after %d attempts", attempt)
             else:
                 logger.warning("Service registration attempt %d failed; retrying", attempt, exc_info=True)
+        else:
+            logger.info("Registered service %s with update-service", configuration[2]["name"])
+            return True
     return False
 
 
+def _heartbeat(seconds: float, stop: threading.Event) -> None:
+    while not stop.wait(seconds):
+        if (configuration := registration_payload()) is None:
+            return
+        try:
+            _put(configuration, REGISTRATION_TIMEOUT_SECONDS)
+        except Exception:
+            # Warning, not error: an update-service outage must not page once a minute from every pod.
+            logger.warning("Service registration heartbeat failed", exc_info=True)
+
+
+def start_heartbeat(interval: float | None = None) -> bool:
+    """Re-PUT the registration every *interval* seconds until the latch is reset, so update-service sees it live."""
+    seconds = env_float(HEARTBEAT_ENV, HEARTBEAT_SECONDS) if interval is None else interval
+    if seconds <= 0:
+        return False
+    _HeartbeatThread(
+        target=_heartbeat, args=(seconds, _heartbeat_stop["event"]), name=f"{THREAD_NAME}-heartbeat", daemon=True
+    ).start()
+    return True
+
+
+def _register_and_heartbeat(retry_delays: Sequence[float] = RETRY_DELAYS) -> None:
+    if registration_payload() is not None:
+        register(retry_delays)
+        start_heartbeat()
+
+
 def trigger_service_registration(retry_delays: Sequence[float] = RETRY_DELAYS) -> bool:
-    """Start registration once per process without delaying the current request; True if this call started it."""
+    """Start registration plus heartbeat once per process without delaying the request; True if this call started it."""
     if not registration_enabled():
         return False
     with _registration_lock:
         if _registration_state["started"]:
             return False
         _registration_state["started"] = True
-    threading.Thread(target=register, args=(retry_delays,), name=THREAD_NAME, daemon=True).start()
+    threading.Thread(target=_register_and_heartbeat, args=(retry_delays,), name=THREAD_NAME, daemon=True).start()
     return True
 
 
@@ -143,6 +185,8 @@ class ServiceRegistrationWSGI:
 
 __all__ = (
     "ENABLED_ENV",
+    "HEARTBEAT_ENV",
+    "HEARTBEAT_SECONDS",
     "REGISTRATION_FIELDS",
     "REGISTRATION_TIMEOUT_SECONDS",
     "RETRY_DELAYS",
@@ -157,5 +201,6 @@ __all__ = (
     "registration_payload",
     "registration_started",
     "reset_registration_state",
+    "start_heartbeat",
     "trigger_service_registration",
 )

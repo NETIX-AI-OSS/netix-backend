@@ -1,6 +1,7 @@
-"""Self-registration with update-service: env contract, retry ladder, once-per-process latch, wrappers."""
+"""Self-registration with update-service: env contract, retry ladder, heartbeat, once-per-process latch, wrappers."""
 
 import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +19,7 @@ ENVIRONMENT = {
     "SERVICE_INTERNAL_BASE_URL": "http://example-service.backend:8000",
     "UPDATE_SERVICE_REGISTRATION_URL": "http://update-service.backend:8000/api/registry/registration/",
     "SERVICE_REGISTRATION_TOKEN": "test-registration-token",
+    "SERVICE_REGISTRATION_HEARTBEAT_SECONDS": "0",
 }
 
 
@@ -65,7 +67,7 @@ def configured(monkeypatch):
 
 @pytest.fixture
 def inline_thread(monkeypatch):
-    monkeypatch.setattr(registration, "threading", SimpleNamespace(Thread=_ImmediateThread))
+    monkeypatch.setattr(registration, "threading", SimpleNamespace(Thread=_ImmediateThread, Event=threading.Event))
     return _ImmediateThread
 
 
@@ -155,6 +157,95 @@ def test_the_ladder_is_the_fleet_default():
     assert registration.RETRY_DELAYS == (0, 1, 2, 4, 8, 16, 30, 60)
 
 
+def test_heartbeat_re_puts_until_the_latch_is_reset(monkeypatch, configured):
+    beats = []
+    done = threading.Event()
+
+    def beat(request, timeout):
+        beats.append(request)
+        if len(beats) == 2:
+            registration.reset_registration_state()
+            done.set()
+        return _Response()
+
+    monkeypatch.setattr(registration, "urlopen", beat)
+    assert registration.start_heartbeat(interval=0.001) is True
+
+    assert done.wait(5)
+    assert all(request.method == "PUT" for request in beats)
+
+
+def test_a_failed_heartbeat_warns_and_keeps_beating(monkeypatch, configured, caplog):
+    outcomes = iter([OSError("update-service down"), _Response(status=503), _Response()])
+    done = threading.Event()
+
+    def beat(*_args, **_kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        if outcome.status == 200:
+            registration.reset_registration_state()
+            done.set()
+        return outcome
+
+    monkeypatch.setattr(registration, "urlopen", beat)
+    with caplog.at_level("WARNING"):
+        registration.start_heartbeat(interval=0.001)
+        assert done.wait(5)
+
+    assert [record.levelname for record in caplog.records] == ["WARNING", "WARNING"]
+
+
+def test_the_heartbeat_stops_once_reset_or_unconfigured(monkeypatch, configured):
+    monkeypatch.setattr(registration, "urlopen", lambda *_args, **_kwargs: pytest.fail("must not beat"))
+    stopped = threading.Event()
+    stopped.set()
+    registration._heartbeat(60, stopped)  # pylint: disable=protected-access
+    monkeypatch.delenv(registration.ENABLED_ENV)
+    registration._heartbeat(0.001, threading.Event())  # pylint: disable=protected-access
+
+
+def test_heartbeat_is_off_at_zero_seconds(configured):
+    assert registration.start_heartbeat() is False
+
+
+def test_an_inline_thread_fake_registers_without_blocking_on_the_heartbeat(monkeypatch, configured):
+    """Consumer suites swap the global threading.Thread for an inline fake; the timer chain must not run inline."""
+    monkeypatch.setenv(registration.HEARTBEAT_ENV, "3600")
+    requests = _record_requests(monkeypatch)
+
+    class _Inline:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(threading, "Thread", _Inline)
+    assert registration.trigger_service_registration() is True
+
+    assert len(requests) == 1
+
+
+def test_the_thread_registers_then_heartbeats(monkeypatch, configured, inline_thread):
+    calls = []
+    monkeypatch.setattr(registration, "register", lambda retry_delays: calls.append(("register", retry_delays)))
+    monkeypatch.setattr(registration, "start_heartbeat", lambda: calls.append(("heartbeat",)))
+
+    registration.trigger_service_registration(retry_delays=(0,))
+
+    assert calls == [("register", (0,)), ("heartbeat",)]
+
+
+def test_the_thread_does_nothing_when_misconfigured(monkeypatch, inline_thread):
+    monkeypatch.setenv(registration.ENABLED_ENV, "TRUE")
+    monkeypatch.delenv(registration.URL_ENV, raising=False)
+    monkeypatch.setattr(registration, "register", lambda *_args: pytest.fail("must not register"))
+
+    assert registration.trigger_service_registration() is True
+    assert inline_thread.started == 1
+
+
 def test_trigger_starts_registration_exactly_once(monkeypatch, configured, inline_thread):
     _record_requests(monkeypatch)
 
@@ -163,15 +254,6 @@ def test_trigger_starts_registration_exactly_once(monkeypatch, configured, inlin
 
     assert inline_thread.started == 1
     assert registration.registration_started() is True
-
-
-def test_trigger_passes_a_custom_ladder_through(monkeypatch, configured, inline_thread):
-    seen = []
-    monkeypatch.setattr(registration, "register", lambda retry_delays: seen.append(retry_delays))
-
-    registration.trigger_service_registration(retry_delays=(0,))
-
-    assert seen == [(0,)]
 
 
 def test_trigger_is_a_noop_while_registration_is_disabled(monkeypatch, inline_thread):

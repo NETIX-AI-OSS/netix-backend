@@ -2,6 +2,8 @@
 
 from netix_backend.asgi.registration import (
     ENABLED_ENV,
+    HEARTBEAT_ENV,
+    HEARTBEAT_SECONDS,
     REGISTRATION_FIELDS,
     REGISTRATION_TIMEOUT_SECONDS,
     RETRY_DELAYS,
@@ -16,11 +18,14 @@ from netix_backend.asgi.registration import (
     registration_payload,
     registration_started,
     reset_registration_state,
+    start_heartbeat,
     trigger_service_registration,
 )
 
 __all__ = (
     "ENABLED_ENV",
+    "HEARTBEAT_ENV",
+    "HEARTBEAT_SECONDS",
     "REGISTRATION_FIELDS",
     "REGISTRATION_TIMEOUT_SECONDS",
     "RETRY_DELAYS",
@@ -35,5 +40,6 @@ __all__ = (
     "registration_payload",
     "registration_started",
     "reset_registration_state",
+    "start_heartbeat",
     "trigger_service_registration",
 )
