@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 
+from netix_backend.discovery import service_url
 from netix_backend.env import env_bool, env_float, env_str, service_authorization
 from netix_backend.http.retry import (
     RETRYABLE_EXC,
@@ -52,7 +53,7 @@ def build_static_client(
         # retries=0: the helpers own the retry loop, and a retrying transport under it would square the attempts.
         transport = RetryTransport(retries=0, verify=env_bool("STATIC_SVC_VERIFY_SSL"))
     return httpx.Client(
-        base_url=env_str("STATIC_SVC_URL", required=True),
+        base_url=service_url("static-service") or env_str("STATIC_SVC_URL", required=True),
         headers={"Authorization": service_authorization("STATIC_SVC_AUTH")},
         timeout=httpx.Timeout(seconds),
         transport=transport,

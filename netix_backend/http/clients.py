@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from netix_backend.discovery import service_url
 from netix_backend.env import ConfigurationError, env_first, parse_bool, service_authorization
 from netix_backend.http.retry import AsyncRetryTransport, RetryTransport
 
@@ -64,6 +65,7 @@ def _required_float(keys: tuple[str, ...]) -> float:
 def _construct_client(
     client_cls: Any,
     *,
+    base_url: str,
     keys: dict[str, tuple[str, ...]],
     authorization: bool,
     extra_headers: dict[str, str] | None,
@@ -71,7 +73,6 @@ def _construct_client(
     pool_timeout: float,
     retries: int | None,
 ) -> Any:
-    base_url = env_first(*keys["url"], required=True)
     accept = env_first(*keys["accept"], default=DEFAULT_ACCEPT)
     verify_ssl = parse_bool(env_first(*keys["verify_ssl"]))
     raise_on_unexpected_status = parse_bool(env_first(*keys["raise_status"]))
@@ -121,6 +122,7 @@ def build_client(
     client_cls: Any,
     *,
     service: str,
+    registry_name: str | None = None,
     url_keys: Sequence[str] | None = None,
     accept_keys: Sequence[str] | None = None,
     auth_keys: Sequence[str] | None = None,
@@ -134,7 +136,7 @@ def build_client(
     pool_timeout: float = POOL_ACQUIRE_TIMEOUT,
     retries: int | None = None,
 ) -> Any:
-    """Build (and by default cache) a generated client from the ``<SVC>_SVC_*`` env quintet, key tuples overriding."""
+    """Build (and cache) a generated client from the ``<SVC>_SVC_*`` env; *registry_name* prefers the registry URL."""
     keys = {
         part: _keys(explicit, service, part)
         for part, explicit in (
@@ -146,9 +148,11 @@ def build_client(
             ("timeout", timeout_keys),
         )
     }
+    base_url = (service_url(registry_name) if registry_name else None) or env_first(*keys["url"], required=True)
     build = partial(
         _construct_client,
         client_cls,
+        base_url=base_url,
         keys=keys,
         authorization=authorization,
         extra_headers=extra_headers,
@@ -164,6 +168,7 @@ def build_client(
         service.upper(),
         authorization,
         tuple(sorted(keys.items())),
+        base_url,
     )
     with _client_cache_lock:
         client = _client_cache.get(cache_key)

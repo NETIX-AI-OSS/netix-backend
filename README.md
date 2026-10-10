@@ -25,6 +25,7 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.env` | `env_bool`, `env_bool_strict`, `env_str`, `env_int`, `env_float`, `env_first`, `service_authorization` — importable without Django configured |
 | `netix_backend.http` | `RetryTransport` / `AsyncRetryTransport` / `RetryTransportWrapper`, `build_client`, `request_with_retry` / `post_with_retry`, `static_upload` / `static_fetch`, healthz helpers — importable without Django configured |
 | `netix_backend.asgi` | `RequestTimeoutMiddleware`, `LifespanWrapper` / `wrap`, `ServiceRegistrationASGI` / `ServiceRegistrationWSGI` / `trigger_service_registration`, `cors_headers`, `error_messages` — importable without Django configured |
+| `netix_backend.discovery` | `service_url(name, fallback_env)`, `discovered_urls()`, `frontend_origins()`, `reset_discovery_cache()` — peer base URLs from update-service's live registry, importable without Django configured |
 | `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `slow_view`, the opt-in assertions |
 | `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()` — OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
@@ -90,7 +91,27 @@ at import, and resolves them per instance in `__init__`, so both stay patchable 
 `GET` / `HEAD` / `OPTIONS` are capped by default — a 504 is retryable, so answering one mid-write
 turns one write into two. Pass `safe_methods=None` to cap every method, `frozenset()` to cap none.
 Registration is env-driven (`SERVICE_REGISTRATION_ENABLED`, `SERVICE_NAME`, …,
-`UPDATE_SERVICE_REGISTRATION_URL`, `SERVICE_REGISTRATION_TOKEN`) and starts once per process.
+`UPDATE_SERVICE_REGISTRATION_URL`, `SERVICE_REGISTRATION_TOKEN`) and starts once per process. After it,
+a daemon heartbeat thread re-sends the registration every `SERVICE_REGISTRATION_HEARTBEAT_SECONDS` (default 60,
+`0` disables) so update-service keeps the entry live; it drops an entry 24h after its last heartbeat.
+
+## Service discovery
+
+```python
+from netix_backend.discovery import service_url
+from netix_backend.http import build_client
+
+tag_url = service_url("tag-service", "TAG_SVC_URL")  # registry name, then the legacy env variable
+client = build_client(AssetClient, service="ASSET", registry_name="asset-service")
+```
+
+`service_url` reads update-service's `GET /api/registry/discovery/` (the registration URL's sibling,
+same token, filtered by `SERVICE_REGISTRATION_ENVIRONMENT`). Only the first lookup in a process blocks;
+after that the answer is refreshed every 60s on a background thread and kept through an update-service
+outage. `frontend_origins()` returns the public origins of the registered frontends, for CORS and CSRF. A registry override wins over a registration;
+an unknown name falls back to the env variable. `build_client` with `registry_name` keys its cache on
+the resolved URL, so a moved or overridden service gets a fresh client without a restart.
+`build_static_client` always tries `static-service` first.
 
 Guard the ceiling with the shared contract suite:
 
