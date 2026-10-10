@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14, <4.0"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -505,8 +505,8 @@ wheels = [
 
 [[package]]
 name = "envoy-pyauth"
-version = "3.0.0"
-source = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v3.0.0#64d23b1262731e5ba5616470fd48e66f1b1a5804" }
+version = "4.0.0"
+source = { git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v4.0.0#59e73720b427066b52fd326bea4462a902c552b5" }
 dependencies = [
     { name = "django" },
     { name = "django-stubs-ext" },
@@ -974,7 +974,7 @@ dev = [
     { name = "djangorestframework-stubs", extras = ["compatible-mypy"], specifier = ">=3.16.0" },
     { name = "drf-excel", specifier = ">=2.5.3,<3" },
     { name = "drf-spectacular", specifier = ">=0.27.2" },
-    { name = "envoy-pyauth", git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v3.0.0" },
+    { name = "envoy-pyauth", git = "https://github.com/NETIX-AI-OSS/envoy-pyauth.git?rev=v4.0.0" },
     { name = "mypy", specifier = ">=1.14.0" },
     { name = "openpyxl", specifier = ">=3.1.5,<4" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30.0,<2" },

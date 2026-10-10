@@ -76,7 +76,7 @@ dev = [
     "opentelemetry-instrumentation-redis>=0.51b0",
     "opentelemetry-instrumentation-httpx>=0.51b0",
     # Concrete source for the bare envoy-pyauth requirement, dev-resolution only; never reaches consumers.
-    "envoy-pyauth @ git+https://github.com/NETIX-AI-OSS/envoy-pyauth.git@v3.0.0",
+    "envoy-pyauth @ git+https://github.com/NETIX-AI-OSS/envoy-pyauth.git@v4.0.0",
 ]
 
 [tool.ruff]
