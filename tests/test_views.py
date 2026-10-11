@@ -552,9 +552,10 @@ def test_legacy_ownership_admits_an_unowned_row_the_library_refuses(client: APIC
     assert (strict.status_code, lenient.status_code, exempt.status_code) == (403, 200, 200)
 
 
-def test_action_permissions_gate_writes(client: APIClient, db: Any) -> None:
+def test_action_permissions_gate_reads_and_writes(client: APIClient, db: Any) -> None:
     assert client.get("/api/gated/").status_code == 403
-    assert client.get("/api/gated/", **envoy()).status_code == 200
+    assert client.get("/api/gated/", **envoy()).status_code == 403
+    assert client.get("/api/gated/", **envoy(permissions=["widget-view"])).status_code == 200
     denied = client.post("/api/gated/", {"label": "x"}, format="json", **envoy())
     assert denied.status_code == 403
     allowed = client.post("/api/gated/", {"label": "x"}, format="json", **envoy(permissions=["widget-edit"]))
