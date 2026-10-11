@@ -86,6 +86,7 @@ def configure_sentry(
 
     # No ignore here: sentry-sdk is not a dependency, and mypy reports each missing module once, at its first import.
     from sentry_sdk.integrations.logging import ignore_logger
+    from sentry_sdk.integrations.redis import RedisIntegration
 
     kwargs: dict[str, Any] = {
         "dsn": dsn,
@@ -97,8 +98,12 @@ def configure_sentry(
         kwargs["traces_sample_rate"] = traces_sample_rate
     if not isinstance(before_send, _Omit):
         kwargs["before_send"] = before_send
-    if not isinstance(disabled_integrations, _Omit):
-        kwargs["disabled_integrations"] = list(disabled_integrations)
+    disabled = [] if isinstance(disabled_integrations, _Omit) else list(disabled_integrations)
+    # Redis errors bypass span exit in the SDK's synchronous wrapper and retain
+    # the previous-span chain. OpenTelemetry owns Redis tracing in NETIX services.
+    if not any(getattr(integration, "identifier", None) == "redis" for integration in disabled):
+        disabled.append(RedisIntegration())
+    kwargs["disabled_integrations"] = disabled
     kwargs.update(init_kwargs)
     # An empty dsn is deliberately not short-circuited: simulator-service inits with one and still needs the tail.
     sentry_sdk.init(**kwargs)

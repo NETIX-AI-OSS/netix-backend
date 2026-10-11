@@ -28,6 +28,12 @@ class FakeDjangoIntegration:
     """Stands in for sentry_sdk.integrations.django.DjangoIntegration; only its identity is under test."""
 
 
+class FakeRedisIntegration:
+    """The Redis integration is disabled without requiring the Redis client package."""
+
+    identifier = "redis"
+
+
 class FakeLoggingIntegration:
     """Stands in for LoggingIntegration, recording the event_level the helper chose to pass."""
 
@@ -87,6 +93,9 @@ def sentry(monkeypatch: pytest.MonkeyPatch) -> SentryCalls:
         ),
         "sentry_sdk.integrations.django": fake_module(
             "sentry_sdk.integrations.django", DjangoIntegration=FakeDjangoIntegration
+        ),
+        "sentry_sdk.integrations.redis": fake_module(
+            "sentry_sdk.integrations.redis", RedisIntegration=FakeRedisIntegration
         ),
     }
     for name, module in modules.items():
@@ -189,15 +198,28 @@ class TestIntegrations:
         (logging_integration,) = sentry.kwargs["integrations"]
         assert logging_integration.event_level == "ERROR"
 
-    def test_disabled_integrations_are_absent_by_default(self, sentry: SentryCalls) -> None:
+    def test_redis_integration_is_disabled_by_default(self, sentry: SentryCalls) -> None:
         configure()
-        assert "disabled_integrations" not in sentry.kwargs
+        (redis_integration,) = sentry.kwargs["disabled_integrations"]
+        assert isinstance(redis_integration, FakeRedisIntegration)
 
     def test_disabled_integrations_are_copied_into_a_list(self, sentry: SentryCalls) -> None:
         # ml-engine instantiates OpenAIIntegration() at the call site, so the SDK import stays inside its own guard.
         marker = object()
         configure(disabled_integrations=(marker,))
-        assert sentry.kwargs["disabled_integrations"] == [marker]
+        assert sentry.kwargs["disabled_integrations"][0] is marker
+        assert isinstance(sentry.kwargs["disabled_integrations"][1], FakeRedisIntegration)
+
+    def test_existing_redis_disable_is_not_duplicated(self, sentry: SentryCalls) -> None:
+        redis_integration = FakeRedisIntegration()
+        configured = (redis_integration,)
+        configure(disabled_integrations=configured)
+        assert sentry.kwargs["disabled_integrations"] == [redis_integration]
+        assert configured == (redis_integration,)
+
+    def test_explicit_empty_list_still_disables_redis(self, sentry: SentryCalls) -> None:
+        configure(disabled_integrations=[])
+        assert isinstance(sentry.kwargs["disabled_integrations"][0], FakeRedisIntegration)
 
 
 class TestTail:
