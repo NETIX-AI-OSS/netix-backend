@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.6.1 — 2026-10-12
+
+### Fixed
+
+- `configure_sentry()` always disables the Sentry Redis integration, preserving caller-supplied disabled integrations. The synchronous SDK wrapper retains entered spans when a Redis command raises; this leaks even with zero or omitted transaction sampling. NETIX Redis tracing remains owned by OpenTelemetry, and Sentry error reporting is unchanged.
+
 ## v1.6.0 — 2026-10-09
 
 ### Added

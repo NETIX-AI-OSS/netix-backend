@@ -271,6 +271,11 @@ which drops the key and, with no `connect_timeout` / `options` set, the whole `O
 
 ## Sentry init
 
+`configure_sentry()` disables Sentry's Redis integration to prevent Redis errors retaining an
+unbounded span chain. This protection also applies to callers supplying other disabled
+integrations or an empty list. Redis client tracing is owned by OpenTelemetry; Sentry error
+reporting remains enabled. The Redis client package is not required to configure Sentry.
+
 ```python
 # app/settings.py
 from netix_backend.observability.sentry import configure_sentry
