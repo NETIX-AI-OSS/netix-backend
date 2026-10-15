@@ -7,7 +7,7 @@ packages = ["netix_backend", "prospector_profile_netix"]
 
 [project]
 name = "netix-backend"
-version = "1.6.1"
+version = "1.7.0"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
@@ -19,6 +19,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
+    # 3.12.0 stopped ThreadSensitiveContext.__aexit__ joining its executor on the loop (asgiref#535): the deadlock
+    # py-spy caught on user-management-auth 2026-08-23. 3.12.1 restores the SyncToAsync shape APM agents patch.
+    "asgiref>=3.12.1",
     "django>=6.0.5,<7",
     "djangorestframework>=3.16.1,<4",
     "django-filter>=24.3",

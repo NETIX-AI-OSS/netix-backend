@@ -56,6 +56,8 @@ def configure(service_name: str | None = None) -> bool:
     try:
         from opentelemetry.instrumentation.django import DjangoInstrumentor
         from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
+        from netix_backend.observability.otel_middleware import use_async_middleware
     except ImportError:
         logger.warning("otel: instrumentation missing (install netix-backend[otel]); tracing stays off")
         return False
@@ -73,6 +75,9 @@ def configure(service_name: str | None = None) -> bool:
     _init_sdk(exporter)
 
     DjangoInstrumentor().instrument()
+    # Upstream's middleware is sync-only, which makes Django run the whole async chain below it through
+    # async_to_sync; a cancelled request can then wedge the worker (user-management-auth, 2026-10-15).
+    use_async_middleware()
 
     # DB spans are off only where a service opts out (per-statement spans dominate ingest-path trace volume).
     if _truthy("NETIX_OTEL_DB"):

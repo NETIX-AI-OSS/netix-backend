@@ -26,8 +26,9 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.http` | `RetryTransport` / `AsyncRetryTransport` / `RetryTransportWrapper`, `build_client`, `request_with_retry` / `post_with_retry`, `static_upload` / `static_fetch`, healthz helpers — importable without Django configured |
 | `netix_backend.asgi` | `RequestTimeoutMiddleware`, `LifespanWrapper` / `wrap`, `ServiceRegistrationASGI` / `ServiceRegistrationWSGI` / `trigger_service_registration`, `cors_headers`, `error_messages` — importable without Django configured |
 | `netix_backend.discovery` | `service_url(name, fallback_env)`, `discovered_urls()`, `frontend_origins()`, `reset_discovery_cache()` — peer base URLs from update-service's live registry, importable without Django configured |
-| `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `slow_view`, the opt-in assertions |
+| `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `HangUpCycle`, `django_scope`, `slow_view`, the opt-in assertions |
 | `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()` — OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
+| `netix_backend.observability.otel_middleware` | `AsyncDjangoMiddleware` — OTel's Django middleware made async-capable; `configure()` installs it, needs the `otel` extra |
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
 | `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `fingerprint_db_infra_errors`, `fingerprint_db_statement_timeouts`, `fingerprint_asgi_executor_teardown`, `IGNORED_TELEMETRY_LOGGERS`, `DB_CONNECT_SIGNATURES` / `DB_READONLY_SIGNATURES` / `DB_STATEMENT_TIMEOUT_SIGNATURES` / `ASGI_EXECUTOR_TEARDOWN_SIGNATURES` |
 | `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key` — importable without Django configured |
@@ -172,6 +173,15 @@ configured, honours `OTEL_SDK_DISABLED`, and lets `OTEL_SERVICE_NAME` from the C
 over the code argument. Call it from both `manage.py` and `app/asgi.py`, post-fork — the
 `BatchSpanProcessor` export thread must be created in the worker. Tests reset the process
 latch with `reset_for_tests()`, never `importlib.reload`.
+
+`configure()` swaps OpenTelemetry's own Django middleware for `AsyncDjangoMiddleware`. Upstream's
+is sync-only, so Django ran it on a worker thread and bridged everything below it back onto the
+event loop with `async_to_sync` — a sync island at the top of every async chain. A request
+cancelled mid-island (a probe timing out) is how user-management-auth wedged on 2026-08-23 and
+2026-10-15. The subclass keeps upstream's sync path for WSGI and `manage.py`, awaits the chain
+directly under ASGI, and closes the span as `499` when a hang-up cancels the request. Any other
+sync-only middleware still builds an island; `HangUpCycle` in `netix_backend.asgi.testing` drives
+the hang-up a service's own stack should survive.
 
 `logging_config()` keeps the `defaults={"otelTraceID": "0", "otelSpanID": "0"}` that stops the
 formatter raising on every record when tracing is off; without it Loki loses the line entirely

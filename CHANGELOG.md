@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.7.0 — 2026-10-15
+
+### Fixed
+
+- **`configure()` no longer puts a sync island at the top of every ASGI chain.** OpenTelemetry's
+  `_DjangoMiddleware` (0.65b0, unchanged in 0.66b1) has only a sync `__call__` and no
+  `async_capable`, so Django ran it on a worker thread and bridged the whole chain below it back
+  onto the loop with `async_to_sync`. A stage user-management-auth pod (527dr, 2026-10-15) logged
+  `CancelledError exception in shielded future` from inside that island right after a probe
+  timeout and never answered another probe. `configure()` now swaps in
+  `netix_backend.observability.otel_middleware.AsyncDjangoMiddleware` right after
+  `DjangoInstrumentor().instrument()`. It keeps upstream's sync path for WSGI and `manage.py`. Under
+  ASGI it marks itself a coroutine function, awaits the chain directly in one task and one context,
+  and runs `process_view` on the loop instead of through `sync_to_async`.
+- **A cancelled request now closes its span.** Upstream left the span open forever and the
+  active-request gauge one higher for every hang-up. Under the island it was worse: the hang-up
+  never reached the view, the abandoned view ran to completion on the thread, and the span recorded
+  a `200` that was never sent. The span now ends with `http.status_code` `499` (nginx's "client
+  closed request") and the cancellation re-raises.
+- **`asgiref>=3.12.1` is now a direct requirement.** asgiref 3.12.0 stopped
+  `ThreadSensitiveContext.__aexit__` from joining its executor on the event loop (asgiref#535).
+  That join is the deadlock py-spy caught on user-management-auth on 2026-08-23: the loop was
+  parked in `executor.shutdown()` while the island thread waited on the loop. The fix covers any
+  sync-only middleware a service still runs, not just OTel's. 3.12.1 restores the `SyncToAsync`
+  shape that APM agents patch. Consumers still on asgiref 3.11.0 (user-management) move up with
+  this bump.
+
+### Added
+
+- `netix_backend.asgi.testing.HangUpCycle(after)` — a client that sends its request and hangs up
+  after `after` seconds, as kubelet does at a probe's `timeoutSeconds`. Drive a service's own
+  Django application with it to check the stack survives the cancellation.
+
 ## v1.6.1 — 2026-10-12
 
 ### Fixed

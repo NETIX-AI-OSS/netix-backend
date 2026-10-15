@@ -131,6 +131,22 @@ class ServerCycle:
             self.message_event.set()
 
 
+# A client that sends its request, then hangs up after *after* seconds: kubelet at a probe's timeoutSeconds.
+class HangUpCycle(ServerCycle):
+    def __init__(self, after: float) -> None:
+        super().__init__()
+        self.after = after
+        self.requested = False
+
+    async def receive(self) -> Message:
+        if not self.requested:
+            self.requested = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        # Django's listen_for_disconnect is the second receive(); the disconnect cancels the request in flight.
+        await asyncio.sleep(self.after)
+        return {"type": "http.disconnect"}
+
+
 # Subclass this in a service's test module as `class TestRequestTimeout(RequestTimeoutContract): pass`.
 class RequestTimeoutContract:
     middleware: ClassVar[type[RequestTimeoutMiddleware]] = RequestTimeoutMiddleware
@@ -367,6 +383,7 @@ __all__ = (
     "ALLOWED_ORIGIN",
     "SLOW_VIEW_SECONDS",
     "UNSAFE_METHODS",
+    "HangUpCycle",
     "Reply",
     "RequestTimeoutContract",
     "ServerCycle",
