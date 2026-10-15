@@ -10,12 +10,15 @@ is the shape of both user-management-auth wedges (2026-08-23 and 2026-10-15).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from inspect import iscoroutinefunction, markcoroutinefunction
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
 from opentelemetry.instrumentation.django.middleware.otel_middleware import _DjangoMiddleware
+
+logger = logging.getLogger(__name__)
 
 # nginx's "client closed request": what the span records when a hang-up cancels the request before any response.
 CLIENT_CLOSED_REQUEST = 499
@@ -54,8 +57,12 @@ class AsyncDjangoMiddleware(_DjangoMiddleware):
         except BaseException as exc:
             # Django turns every Exception below us into a response, so this is cancellation: a hang-up or a probe
             # timeout. Unhandled, the span never ends and the active-request gauge only ever climbs.
-            self.process_exception(request, exc)
-            self.process_response(request, HttpResponse(status=CLIENT_CLOSED_REQUEST))
+            try:
+                self.process_exception(request, exc)
+                self.process_response(request, HttpResponse(status=CLIENT_CLOSED_REQUEST))
+            except Exception:
+                # Raising here would swap the CancelledError for this error and break Django's TaskGroup unwind.
+                logger.exception("otel: could not close the span of a cancelled request")
             raise
         finished: HttpResponse = self.process_response(request, response)
         return finished
@@ -73,6 +80,9 @@ def use_async_middleware() -> None:
     """Swap upstream's entry in settings.MIDDLEWARE for ours, in place; call right after DjangoInstrumentor."""
     from django.conf import settings
 
+    # Unconfigured means DjangoInstrumentor bailed before touching settings, so there is nothing to swap.
+    if not settings.configured:
+        return
     settings.MIDDLEWARE = [ASYNC_MIDDLEWARE if entry == UPSTREAM_MIDDLEWARE else entry for entry in settings.MIDDLEWARE]
 
 

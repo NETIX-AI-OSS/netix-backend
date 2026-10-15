@@ -29,6 +29,7 @@ from netix_backend.observability.otel_middleware import (
     CLIENT_CLOSED_REQUEST,
     UPSTREAM_MIDDLEWARE,
     AsyncDjangoMiddleware,
+    use_async_middleware,
 )
 from tests import otel_urls
 
@@ -120,6 +121,15 @@ class TestConfigureInstallsIt:
             assert otel.configure("svc") is True
             assert settings.MIDDLEWARE == BASE_MIDDLEWARE
 
+    def test_leaves_unconfigured_settings_untouched(self) -> None:
+        """OTEL_PYTHON_DJANGO_INSTRUMENT=False skips upstream's settings read; ours must not force a settings import."""
+        from django.conf import LazySettings
+
+        with mock.patch.object(LazySettings, "configured", new_callable=mock.PropertyMock, return_value=False):
+            with mock.patch.object(LazySettings, "__setattr__") as write:
+                use_async_middleware()
+        write.assert_not_called()
+
 
 class TestNoSyncIsland:
     """The 2026-08-23 and 2026-10-15 wedges both needed a sync-only middleware above an async chain."""
@@ -169,6 +179,22 @@ class TestTracing:
         (span,) = traced.get_finished_spans()
         assert status_of(span) == 201
         assert active_requests() == 0
+
+    async def test_cancellation_survives_a_failing_span_close(
+        self, traced: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Swapping the CancelledError for the close's own error would break Django's TaskGroup unwind."""
+
+        async def cancelled(request: Any) -> HttpResponse:
+            raise asyncio.CancelledError
+
+        def broken(self: Any, request: Any, response: Any) -> Any:
+            raise RuntimeError("span close failed")
+
+        monkeypatch.setattr(_DjangoMiddleware, "process_response", broken)
+        with pytest.raises(asyncio.CancelledError):
+            await AsyncDjangoMiddleware(cancelled).__acall__(RequestFactory().get("/fast/"))
+        assert "could not close the span of a cancelled request" in caplog.text
 
 
 class TestHangUp:
