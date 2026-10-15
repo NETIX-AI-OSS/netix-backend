@@ -886,9 +886,10 @@ wheels = [
 
 [[package]]
 name = "netix-backend"
-version = "1.6.1"
+version = "1.7.0"
 source = { editable = "." }
 dependencies = [
+    { name = "asgiref" },
     { name = "django" },
     { name = "django-filter" },
     { name = "djangorestframework" },
@@ -948,6 +949,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "adrf", marker = "extra == 'async'", specifier = ">=0.1.9" },
+    { name = "asgiref", specifier = ">=3.12.1" },
     { name = "django", specifier = ">=6.0.5,<7" },
     { name = "django-filter", specifier = ">=24.3" },
     { name = "djangorestframework", specifier = ">=3.16.1,<4" },
