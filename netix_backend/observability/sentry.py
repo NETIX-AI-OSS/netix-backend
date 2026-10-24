@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from netix_backend.env import OMIT, _Omit
 
@@ -51,7 +51,8 @@ def _integrations(
     if not isinstance(logging_event_level, _Omit):
         from sentry_sdk.integrations.logging import LoggingIntegration
 
-        resolved.append(LoggingIntegration(event_level=logging_event_level))
+        # The SDK annotates int only, but its logging.Handler accepts level names as well; preserve that API.
+        resolved.append(LoggingIntegration(event_level=cast(Any, logging_event_level)))
     return resolved
 
 

@@ -140,7 +140,7 @@ class TestNoSyncIsland:
 
         middleware = AsyncDjangoMiddleware(get_response)
         assert inspect.iscoroutinefunction(middleware) is True
-        assert inspect.iscoroutinefunction(middleware.process_view) is True
+        assert inspect.iscoroutinefunction(middleware.process_view) is False
 
     def test_sync_handler_keeps_the_sync_path(self) -> None:
         middleware = AsyncDjangoMiddleware(lambda request: HttpResponse())
@@ -167,7 +167,7 @@ class TestTracing:
         assert serve(get_asgi_application(), "/fast/") == [200]
         (span,) = traced.get_finished_spans()
         assert status_of(span) == 200
-        # Set by process_view, so this proves the async variant ran without a thread hop.
+        # Set by the upstream metadata hook while the request chain remains async.
         assert (span.attributes or {}).get("http.route") == "fast/"
         assert active_requests() == 0
 
@@ -191,10 +191,18 @@ class TestTracing:
         def broken(self: Any, request: Any, response: Any) -> Any:
             raise RuntimeError("span close failed")
 
+        close = _DjangoMiddleware.process_response
         monkeypatch.setattr(_DjangoMiddleware, "process_response", broken)
-        with pytest.raises(asyncio.CancelledError):
-            await AsyncDjangoMiddleware(cancelled).__acall__(RequestFactory().get("/fast/"))
+        middleware = AsyncDjangoMiddleware(cancelled)
+        request = RequestFactory().get("/fast/")
+        try:
+            with pytest.raises(asyncio.CancelledError):
+                await middleware.__acall__(request)
+        finally:
+            # The deliberate close failure leaves OTel's context manager open; close it in this task, not at GC.
+            close(middleware, request, HttpResponse(status=CLIENT_CLOSED_REQUEST))
         assert "could not close the span of a cancelled request" in caplog.text
+        assert active_requests() == 0
 
 
 class TestHangUp:

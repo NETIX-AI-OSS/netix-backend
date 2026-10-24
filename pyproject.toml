@@ -59,6 +59,8 @@ dev = [
     "pytest-django>=4.9.0",
     "pytest-cov>=6.0.0",
     "pytest-asyncio>=1.0.0",
+    # Reproduce the deployed Django middleware instrumentation, not a hand-written wrapper.
+    "sentry-sdk[django]==2.50.0",
     "mypy>=1.14.0",
     "django-stubs[compatible-mypy]>=5.1.0",
     "djangorestframework-stubs[compatible-mypy]>=3.16.0",
