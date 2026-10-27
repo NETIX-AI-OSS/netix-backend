@@ -7,7 +7,7 @@ packages = ["netix_backend", "prospector_profile_netix"]
 
 [project]
 name = "netix-backend"
-version = "1.7.0"
+version = "1.7.1"
 description = "Shared Django/DRF base layer for NETIX backend services: soft-delete models, scoped viewsets, error envelope, HTTP retry transports, and env parsing."
 readme = "README.md"
 requires-python = ">=3.14,<4.0"
@@ -23,7 +23,8 @@ dependencies = [
     # py-spy caught on user-management-auth 2026-08-23. 3.12.1 restores the SyncToAsync shape APM agents patch.
     "asgiref>=3.12.1",
     "django>=6.0.5,<7",
-    "djangorestframework>=3.16.1,<4",
+    "djangorestframework>=3.18.2,<4",
+    "certifi>=2026.10.19",
     "django-filter>=24.3",
     "httpx>=0.28,<0.29",
     "envoy-pyauth>=2.0.0",
@@ -59,11 +60,14 @@ dev = [
     "pytest-django>=4.9.0",
     "pytest-cov>=6.0.0",
     "pytest-asyncio>=1.0.0",
+    # Reproduce the deployed Django middleware instrumentation, not a hand-written wrapper.
+    "sentry-sdk[django]==2.50.0",
     "mypy>=1.14.0",
     "django-stubs[compatible-mypy]>=5.1.0",
     "djangorestframework-stubs[compatible-mypy]>=3.16.0",
     "ruff>=0.13.0",
     "prospector>=1.13.0",
+    "pylint>=4.0.9",
     "pip-audit>=2.7.0",
     "drf-spectacular>=0.27.2",
     "adrf>=0.1.9",

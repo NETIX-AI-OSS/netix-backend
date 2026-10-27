@@ -1,8 +1,8 @@
-"""configure_sentry against a simulated sentry_sdk; the library must not depend on the SDK, not even for tests."""
+"""configure_sentry unit tests use a simulated SDK; consumers keep the SDK as an optional runtime dependency."""
 
 from __future__ import annotations
 
-import importlib.util
+import importlib.metadata
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType
@@ -115,8 +115,9 @@ class TestDisabled:
         assert "sentry_sdk" not in sys.modules
 
     def test_the_library_does_not_depend_on_the_sdk(self) -> None:
-        # A dependency on sentry-sdk would make every consumer install it; the tests simulate it instead.
-        assert importlib.util.find_spec("sentry_sdk") is None
+        # Runtime requirements must not force the SDK on consumers; dev installs it for real integration regressions.
+        requirements = importlib.metadata.requires("netix-backend") or []
+        assert not any(item.lower().replace("_", "-").startswith("sentry-sdk") for item in requirements)
 
 
 class TestInitKwargs:

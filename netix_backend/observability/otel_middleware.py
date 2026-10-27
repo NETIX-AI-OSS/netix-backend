@@ -40,8 +40,8 @@ class AsyncDjangoMiddleware(_DjangoMiddleware):
         if self.async_mode:
             # load_middleware and convert_exception_to_response read this; unmarked, Django wraps us as sync again.
             markcoroutinefunction(self)
-            # Django adapts a sync process_view with sync_to_async: a thread hop per request for two attribute writes.
-            self.process_view = self._aprocess_view  # type: ignore[method-assign]
+            # Keep upstream's synchronous metadata hook: Sentry wraps process_view in a sync callable.
+            # An async replacement would then return an unawaited coroutine through Django's sync adapter.
 
     def __call__(self, request: HttpRequest) -> HttpResponse | Awaitable[HttpResponse]:
         if self.async_mode:
@@ -66,10 +66,6 @@ class AsyncDjangoMiddleware(_DjangoMiddleware):
             raise
         finished: HttpResponse = self.process_response(request, response)
         return finished
-
-    async def _aprocess_view(self, request: HttpRequest, view_func: Any, *args: Any, **kwargs: Any) -> None:
-        # Only records the matched route on the span: no I/O, so it is safe to run on the event loop.
-        super().process_view(request, view_func, *args, **kwargs)
 
 
 UPSTREAM_MIDDLEWARE = _dotted(_DjangoMiddleware)
