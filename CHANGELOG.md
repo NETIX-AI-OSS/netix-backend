@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.1 — unreleased
+
+### Fixed
+
+- Keep OpenTelemetry's view metadata hook synchronous for compatibility with Sentry DjangoIntegration. ASGI requests retain the asynchronous middleware chain and cancellation cleanup without returning a coroutine as a response.
+
+
+- Require patched DRF 3.18.2 and Certifi 2026.10.19 or newer; the development toolchain also requires Pylint 4.0.9 or newer.
+
 ## v1.7.0 — 2026-10-15
 
 ### Fixed
