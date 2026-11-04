@@ -67,7 +67,13 @@ def envoy_filter() -> Any:
 
 class TestModuleScopeIsImportLight:
     def test_pytest_is_the_only_module_bound_at_module_scope(self) -> None:
-        bound = {name for name, value in vars(testing).items() if isinstance(value, types.ModuleType)}
+        # pytest >=9.2 injects @py_builtins/@pytest_ar into every assertion-rewritten module's
+        # globals; those are pytest internals, not imports made by the plugin.
+        bound = {
+            name
+            for name, value in vars(testing).items()
+            if isinstance(value, types.ModuleType) and not name.startswith("@")
+        }
         assert bound == {"pytest"}
 
     def test_plugin_is_loaded_without_a_conftest(self, pytestconfig: pytest.Config) -> None:
