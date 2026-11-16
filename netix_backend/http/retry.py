@@ -27,7 +27,7 @@ MAX_RETRY_AFTER_SECONDS = 30.0
 
 RETRYABLE_STATUS = frozenset({HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS})
 
-# Status-based retries only — connection/timeout errors may retry any method.
+# Status-based retries only: connection/timeout errors may retry any method.
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # NetworkError + TimeoutException subsume every connect/read/write/pool leaf class; never enumerate leaves.
@@ -388,7 +388,7 @@ def request_with_retry(
 ) -> httpx.Response:
     """One-shot request with the shared retry policy; *deadline* caps the whole loop, not just one attempt.
 
-    Exhausted status retries return the last response rather than raising — check ``response.status_code``.
+    Exhausted status retries return the last response rather than raising, check ``response.status_code``.
     """
     attempts = default_retries() if retries is None else retries
     factor = default_backoff() if backoff_factor is None else backoff_factor

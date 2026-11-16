@@ -37,7 +37,7 @@ class BaseQuerySet(models.QuerySet[Any]):
         *,
         batch_size: int | None = None,
     ) -> int:
-        """bulk_update that stamps ``updated_on`` by hand — bulk_update never runs ``auto_now``."""
+        """bulk_update that stamps ``updated_on`` by hand, bulk_update never runs ``auto_now``."""
         rows = list(objs)
         now = timezone.now()
         for row in rows:

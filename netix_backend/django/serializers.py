@@ -66,7 +66,7 @@ class ChangeHistoryEntrySerializer(serializers.Serializer):  # pylint: disable=a
     )
     by = serializers.IntegerField(read_only=True, allow_null=True, help_text="Acting user id, null for system")
     by_name = serializers.CharField(read_only=True, allow_blank=True)
-    # Why the change was made — empty when the write stated none, and null on entries recorded
+    # Why the change was made: empty when the write stated none, and null on entries recorded
     # before the field existed.
     reason = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
     changes = ChangeHistoryChangeSerializer(many=True, read_only=True)
@@ -81,7 +81,7 @@ class ChangeHistorySerializerMixin(serializers.Serializer):  # pylint: disable=a
     """
 
     change_history = ChangeHistoryEntrySerializer(many=True, read_only=True)
-    # Write-only, never a model field — popped in validate() and folded onto the actor for the
+    # Write-only, never a model field: popped in validate() and folded onto the actor for the
     # save, so it lands on the trail entry the write produces.
     change_reason = serializers.CharField(
         write_only=True,

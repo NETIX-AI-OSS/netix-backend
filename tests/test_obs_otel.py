@@ -1,4 +1,4 @@
-"""Tests for the vendored OTel bootstrap — the failure modes it guards are silent ones."""
+"""Tests for the vendored OTel bootstrap, the failure modes it guards are silent ones."""
 
 from __future__ import annotations
 

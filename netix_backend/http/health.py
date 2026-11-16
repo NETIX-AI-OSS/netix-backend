@@ -30,7 +30,7 @@ async def send_healthz(send: Send, body: bytes = HEALTHZ_BODY) -> None:
 
 
 def healthz_asgi(app: ASGIApp, path: str = HEALTHZ_PATH, *, body: bytes = HEALTHZ_BODY) -> ASGIApp:
-    """Wrap *app* so probes are answered above Django — the only variant that still replies during a DB outage."""
+    """Wrap *app* so probes are answered above Django, the only variant that still replies during a DB outage."""
     paths = {path, path.rstrip("/")}
 
     async def health_intercepted(scope: Scope, receive: Receive, send: Send) -> None:

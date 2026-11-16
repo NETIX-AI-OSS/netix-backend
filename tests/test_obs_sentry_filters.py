@@ -157,7 +157,7 @@ class TestDropCancelledErrors:
         assert drop_cancelled_errors({}, hint) is None
 
     def test_dropped_from_the_original_exception(self):
-        """The logging integration ships originalException, not exc_info — the weak copies miss this."""
+        """The logging integration ships originalException, not exc_info, the weak copies miss this."""
         assert drop_cancelled_errors({}, {"originalException": asyncio.CancelledError()}) is None
 
     def test_dropped_when_not_the_terminal_frame(self):
