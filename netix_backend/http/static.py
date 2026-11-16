@@ -140,7 +140,7 @@ def static_upload(
 
 
 def link_or_empty(**kwargs: Any) -> str:
-    """Upload and return only the link, "" on failure; prefer :func:`static_upload` — silence hides dedup breakage."""
+    """Upload and return only the link, "" on failure; prefer :func:`static_upload`, silence hides dedup breakage."""
     try:
         return str(static_upload(**kwargs)["link"])
     except StaticServiceError as exc:

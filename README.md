@@ -4,7 +4,7 @@ Shared Django/DRF base layer for NETIX backend services: soft-delete models, ten
 viewsets, the `{"status_code": ..., "messages": ...}` error envelope, limit/offset pagination,
 HTTP retry transports, a generated-client factory, static-service uploads, and env parsing.
 
-One package, one version. Import only what you need — an unused subpackage costs nothing.
+One package, one version. Import only what you need, an unused subpackage costs nothing.
 
 ## Install
 
@@ -22,24 +22,24 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 
 | Module | Contents |
 |---|---|
-| `netix_backend.env` | `env_bool`, `env_bool_strict`, `env_str`, `env_int`, `env_float`, `env_first`, `service_authorization` — importable without Django configured |
-| `netix_backend.http` | `RetryTransport` / `AsyncRetryTransport` / `RetryTransportWrapper`, `build_client`, `request_with_retry` / `post_with_retry`, `static_upload` / `static_fetch`, healthz helpers — importable without Django configured |
-| `netix_backend.asgi` | `RequestTimeoutMiddleware`, `LifespanWrapper` / `wrap`, `ServiceRegistrationASGI` / `ServiceRegistrationWSGI` / `trigger_service_registration`, `cors_headers`, `error_messages` — importable without Django configured |
-| `netix_backend.discovery` | `service_url(name, fallback_env)`, `discovered_urls()`, `frontend_origins()`, `reset_discovery_cache()` — peer base URLs from update-service's live registry, importable without Django configured |
+| `netix_backend.env` | `env_bool`, `env_bool_strict`, `env_str`, `env_int`, `env_float`, `env_first`, `service_authorization`, importable without Django configured |
+| `netix_backend.http` | `RetryTransport` / `AsyncRetryTransport` / `RetryTransportWrapper`, `build_client`, `request_with_retry` / `post_with_retry`, `static_upload` / `static_fetch`, healthz helpers, importable without Django configured |
+| `netix_backend.asgi` | `RequestTimeoutMiddleware`, `LifespanWrapper` / `wrap`, `ServiceRegistrationASGI` / `ServiceRegistrationWSGI` / `trigger_service_registration`, `cors_headers`, `error_messages`, importable without Django configured |
+| `netix_backend.discovery` | `service_url(name, fallback_env)`, `discovered_urls()`, `frontend_origins()`, `reset_discovery_cache()`, peer base URLs from update-service's live registry, importable without Django configured |
 | `netix_backend.asgi.testing` | `RequestTimeoutContract` (subclass it), `slow_app`, `drive`, `ServerCycle`, `HangUpCycle`, `django_scope`, `slow_view`, the opt-in assertions |
-| `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()` — OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
-| `netix_backend.observability.otel_middleware` | `AsyncDjangoMiddleware` — OTel's Django middleware made async-capable; `configure()` installs it, needs the `otel` extra |
+| `netix_backend.observability.otel` | `configure()`, `is_configured()`, `reset_for_tests()`, OTel bootstrap, importable without the SDK (needs the `otel` extra to actually trace) |
+| `netix_backend.observability.otel_middleware` | `AsyncDjangoMiddleware`, OTel's Django middleware made async-capable; `configure()` installs it, needs the `otel` extra |
 | `netix_backend.observability.logging` | `logging_config()` dictConfig factory, `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`, `TRACE_ID_DEFAULTS`, `ContextFormatter`, `log_context` |
 | `netix_backend.observability.sentry_filters` | `chain`, `drop_cancelled_errors`, `drop_client_errors`, `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`, `fingerprint_db_infra_errors`, `fingerprint_db_statement_timeouts`, `fingerprint_asgi_executor_teardown`, `IGNORED_TELEMETRY_LOGGERS`, `DB_CONNECT_SIGNATURES` / `DB_READONLY_SIGNATURES` / `DB_STATEMENT_TIMEOUT_SIGNATURES` / `ASGI_EXECUTOR_TEARDOWN_SIGNATURES` |
-| `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key` — importable without Django configured |
-| `netix_backend.database` | `postgres_database()`, `replica_of()`, `FromEnv`, `OMIT` / `REQUIRED` — DATABASES factories, importable without Django configured (alias: `netix_backend.django.database`) |
-| `netix_backend.observability.sentry` | `configure_sentry()` — the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit; `is_interactive_shell()`, `INTERACTIVE_SHELL_COMMANDS`, `BARE_INTERPRETER_ARGV0` |
-| `netix_backend.django.org_scope` | `SuperuserOrgScopeMixin` — runtime `?organization=<id>` cross-org scoping for superusers, schema-free |
+| `netix_backend.cloning` | `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`, `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key`, importable without Django configured |
+| `netix_backend.database` | `postgres_database()`, `replica_of()`, `FromEnv`, `OMIT` / `REQUIRED`, DATABASES factories, importable without Django configured (alias: `netix_backend.django.database`) |
+| `netix_backend.observability.sentry` | `configure_sentry()`, the shared `sentry_sdk.init` wrapper; `sentry_sdk` imported lazily, `environment` always explicit; `is_interactive_shell()`, `INTERACTIVE_SHELL_COMMANDS`, `BARE_INTERPRETER_ARGV0` |
+| `netix_backend.django.org_scope` | `SuperuserOrgScopeMixin`, runtime `?organization=<id>` cross-org scoping for superusers, schema-free |
 | `netix_backend.django.org_scope_schema` | the four OpenAPI advertising helpers (`..._parameter`, `..._schema`, `..._autoschema`, `..._parameter_dict`), `description` always required |
-| `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec` — the two-phase test-settings bootstrap |
+| `netix_backend.django.test_settings` | `apply_test_env()`, `load_base_settings()`, `test_overrides()`, `EnvoySpec`, the two-phase test-settings bootstrap |
 | `prospector_profile_netix` | the shared prospector profile: `inherits: [netix]` (or `[netix:django]`) in a repo's prospector.yaml |
 | `netix_backend.django.models` | `BaseModel`, `NamedBaseModel`, `SluggedNamedBaseModel`, `CompactNamedBaseModel`, `BaseManager`, `CloneProvenanceMixin`, `organization_scoped()` |
-| `netix_backend.django.change_history` | `ChangeHistoryModel`, `ChangeActor`, `ChangeHistoryActorMiddleware`, `actor_context` / `get_actor` / `set_actor` / `reset_actor`, `reason_context` / `reason_from_query` / `normalize_reason`, `history_requested`, `json_safe`, the `SOURCE_*` constants — the on-row audit trail, runtime only |
+| `netix_backend.django.change_history` | `ChangeHistoryModel`, `ChangeActor`, `ChangeHistoryActorMiddleware`, `actor_context` / `get_actor` / `set_actor` / `reset_actor`, `reason_context` / `reason_from_query` / `normalize_reason`, `history_requested`, `json_safe`, the `SOURCE_*` constants, the on-row audit trail, runtime only |
 | `netix_backend.django.change_history_schema` | `HISTORY_PARAMETER`, `history_parameter()`, `HISTORY_DESCRIPTION`, `REASON_PARAMETER`, `reason_parameter()`, `REASON_DESCRIPTION` (requires the `spectacular` extra) |
 | `netix_backend.django.views` | `BaseViewSet` and its mixins (scoping, tenant write pinning, atomic writes, soft delete, permissions); `include_deleted_schema()` needs the `spectacular` extra |
 | `netix_backend.django.views_aio` | `AsyncBaseViewSet` (requires the `async` extra) |
@@ -51,14 +51,14 @@ Extras: `[spectacular]` (OpenAPI schema helpers), `[async]` (adrf viewsets), `[e
 | `netix_backend.django.excel` | envoy-free export core: style presets, `ExcelExportViewSet`, `DocumentedExcelViewSet` (requires the `excel` extra) |
 | `netix_backend.django.excel_envoy` | `ScopedExcelViewSet` (= `BaseExcelViewSet`), scoping on top of the excel core |
 | `netix_backend.django.excel_aio` | `AsyncExcelViewSet` (requires the `excel` and `async` extras) |
-| `netix_backend.django.db_timeout` | `install()` / `statement_timeout_ms()` — per-connection Postgres `statement_timeout` |
-| `netix_backend.django.cache` | `redis_caches()`, `cache_ttls()` — the Redis/Sentinel `CACHES` block and the TTL names |
+| `netix_backend.django.db_timeout` | `install()` / `statement_timeout_ms()`, per-connection Postgres `statement_timeout` |
+| `netix_backend.django.cache` | `redis_caches()`, `cache_ttls()`, the Redis/Sentinel `CACHES` block and the TTL names |
 | `netix_backend.django.org_bootstrap` | `build_org_bootstrap_view()`, `CloneError`, the `ClonePrimitives` / `TeardownPrimitives` protocols |
 | `netix_backend.django.testing` | `unscoped_envoy` / `explicit_envoy_identity` / `envoy_client` / `no_unmocked_http` / `clear_envoy_cache` / `envoy_request_factory` fixtures, `client_response()`, `envoy_api_client()`, `block_http()`, `swap_auth_middleware()`, `platform_test_identity()`, `assert_timeout_invariant()`, the two test middlewares (`NETIX_TEST_ENVOY_HEADER_GUARD`) |
 
 `BaseViewSet` scopes reads through `model_queryset` (or an explicit `_get_queryset_filter()` call in a
 `get_queryset` override). A plain DRF `queryset = …` attribute is handed back unscoped, exactly as in the
-services today — declare `model_queryset` to get organization scoping.
+services today, declare `model_queryset` to get organization scoping.
 
 Behavioral knobs default to what the fleet ships today; behavior changes are opt-in per service.
 See `CHANGELOG.md` for migration notes per release.
@@ -89,7 +89,7 @@ application = LifespanWrapper(ServiceRegistrationASGI(RequestTimeoutMiddleware(a
 
 The ceiling reads `REQUEST_TIMEOUT_SECONDS` (default 120) and `MAX_ABANDONED_REQUESTS` (default 50)
 at import, and resolves them per instance in `__init__`, so both stay patchable in tests. Only
-`GET` / `HEAD` / `OPTIONS` are capped by default — a 504 is retryable, so answering one mid-write
+`GET` / `HEAD` / `OPTIONS` are capped by default, a 504 is retryable, so answering one mid-write
 turns one write into two. Pass `safe_methods=None` to cap every method, `frozenset()` to cap none.
 Registration is env-driven (`SERVICE_REGISTRATION_ENABLED`, `SERVICE_NAME`, …,
 `UPDATE_SERVICE_REGISTRATION_URL`, `SERVICE_REGISTRATION_TOKEN`) and starts once per process. After it,
@@ -133,7 +133,7 @@ class TestRequestTimeout(RequestTimeoutContract):
 ## Observability
 
 Extras: `[otel]` (the seven `opentelemetry-*` packages). `netix_backend.observability` imports
-cleanly without Django configured and without OpenTelemetry or `sentry_sdk` installed — every
+cleanly without Django configured and without OpenTelemetry or `sentry_sdk` installed, every
 `opentelemetry` import is function-local and `sentry_sdk` is never imported at all, so the
 filters are plain functions over the event/hint dicts.
 
@@ -170,13 +170,13 @@ before_send = chain(
 
 `configure()` is idempotent and env-driven: it no-ops unless a collector endpoint is
 configured, honours `OTEL_SDK_DISABLED`, and lets `OTEL_SERVICE_NAME` from the ConfigMap win
-over the code argument. Call it from both `manage.py` and `app/asgi.py`, post-fork — the
+over the code argument. Call it from both `manage.py` and `app/asgi.py`, post-fork, the
 `BatchSpanProcessor` export thread must be created in the worker. Tests reset the process
 latch with `reset_for_tests()`, never `importlib.reload`.
 
 `configure()` swaps OpenTelemetry's own Django middleware for `AsyncDjangoMiddleware`. Upstream's
 is sync-only, so Django ran it on a worker thread and bridged everything below it back onto the
-event loop with `async_to_sync` — a sync island at the top of every async chain. A request
+event loop with `async_to_sync`, a sync island at the top of every async chain. A request
 cancelled mid-island (a probe timing out) is how user-management-auth wedged on 2026-08-23 and
 2026-10-15. The subclass keeps upstream's sync path for WSGI and `manage.py`, awaits the chain
 directly under ASGI, and closes the span as `499` when a hang-up cancels the request. Any other
@@ -190,7 +190,7 @@ and cannot join to Tempo.
 ## Statement timeout
 
 ```python
-# app/settings.py — first thing, before DATABASES
+# app/settings.py: first thing, before DATABASES
 from netix_backend.django import db_timeout
 
 DB_STATEMENT_TIMEOUT_MS = db_timeout.statement_timeout_ms()
@@ -198,8 +198,8 @@ db_timeout.install()  # or from your AppConfig.ready()
 ```
 
 `statement_timeout_ms()` reads `DB_STATEMENT_TIMEOUT_MS` (default 30000) at call time, and returns
-`0` while `sys.argv[1]` is a migration command. Every new Postgres connection is `SET` explicitly —
-including to 0 — because PgBouncer leaks a prior client's ceiling onto a pooled connection. Keep
+`0` while `sys.argv[1]` is a migration command. Every new Postgres connection is `SET` explicitly,
+including to 0, because PgBouncer leaks a prior client's ceiling onto a pooled connection. Keep
 `REQUEST_TIMEOUT_SECONDS > DB_STATEMENT_TIMEOUT_MS / 1000`; assert it with
 `netix_backend.django.testing.assert_timeout_invariant()`.
 
@@ -221,7 +221,7 @@ _ttls = cache_ttls(long_ttl_factor=24)
 CACHE_TTL, CACHE_LONG_TTL, CACHE_ENABLED = _ttls.ttl, _ttls.long_ttl, _ttls.enabled
 ```
 
-Bind by name — never `globals().update(...)`. `strict=True` (the default) mirrors
+Bind by name, never `globals().update(...)`. `strict=True` (the default) mirrors
 `os.environ[...]`; `strict=False` mirrors the `env()`-with-defaults style.
 
 ## Test identity
@@ -249,7 +249,7 @@ keep the old unguarded behaviour.
 from netix_backend.cloning import base_key, key_owner, org_key
 
 org_key("fire_alarm", 5)  # "nc5_fire_alarm"
-org_key("nc3_fire_alarm", 5)  # "nc5_fire_alarm" — re-homing replaces, never nests
+org_key("nc3_fire_alarm", 5)  # "nc5_fire_alarm", re-homing replaces, never nests
 base_key("nc3_fire_alarm")  # "fire_alarm"
 key_owner("fire_alarm")  # None
 ```
@@ -260,7 +260,7 @@ because that is the cross-service name contract.
 ## Databases
 
 ```python
-# app/settings.py — no Django required at this point
+# app/settings.py: no Django required at this point
 from netix_backend.database import OMIT, FromEnv, postgres_database, replica_of
 
 DATABASES = {"default": postgres_database(conn_max_age=0)}
@@ -272,10 +272,10 @@ DATABASES["read_replica"] = replica_of(
 )
 ```
 
-`FromEnv("POSTGRES_HOST", "historian.platform")` reproduces `os.environ.get(...)` exactly — an
+`FromEnv("POSTGRES_HOST", "historian.platform")` reproduces `os.environ.get(...)` exactly, an
 empty string stays an empty string, never the default. `OMIT` drops a key entirely. Since
 v1.5.0 `prepare_threshold` defaults to `None`, so every alias carries
-`OPTIONS = {"prepare_threshold": None}` — the setting pgbouncer's transaction pooling mode
+`OPTIONS = {"prepare_threshold": None}`, the setting pgbouncer's transaction pooling mode
 requires. An alias that talks to Postgres directly opts out with `prepare_threshold=OMIT`,
 which drops the key and, with no `connect_timeout` / `options` set, the whole `OPTIONS` dict.
 
@@ -302,7 +302,7 @@ configure_sentry(
 `environment` has no default on purpose. `enabled` is computed by the caller, so gating
 spellings stay per-repo. `sentry_sdk` is imported only when `enabled` is true.
 
-Since v1.5.0 the call is also skipped when the process is an interactive shell — `manage.py
+Since v1.5.0 the call is also skipped when the process is an interactive shell, `manage.py
 shell` / `shell_plus` / `dbshell`, and any bare-interpreter run (`python -c …`, the REPL, a
 script on stdin). An operator's typo at a prompt is not a service fault, and it accounted for
 86 of the fleet's 351 unresolved issues while the guard lived in only three repos. Nothing to
@@ -323,7 +323,7 @@ from netix_backend.observability.sentry_filters import chain, fingerprint_db_inf
 before_send = chain(drop_cancelled_errors, fingerprint_db_infra_errors)
 ```
 
-One shared-Postgres restart used to mint ~15 separate GlitchTip issues across the fleet — one
+One shared-Postgres restart used to mint ~15 separate GlitchTip issues across the fleet, one
 per service, view and message variant. `fingerprint_db_infra_errors` pins every PgBouncer/libpq
 connect failure to `("db-infra", "postgres-connection-failure")` and a post-failover standby
 write to `("db-infra", "postgres-read-only-transaction")`, so the same outage arrives as one
@@ -359,8 +359,8 @@ before_send = chain(
 When a client disconnects before a response exists, Django's ASGI handler still sends
 `request_finished`, and its sync receivers hit an already-quit asgiref executor
 (asgiref#526): `RuntimeError: CurrentThreadExecutor already quit or is broken`. It is harmless
-per request, but it is reported twice — DjangoIntegration's capture and uvicorn's
-"Exception in ASGI application" log — and fragments into a new issue per view and logger.
+per request, but it is reported twice, DjangoIntegration's capture and uvicorn's
+"Exception in ASGI application" log, and fragments into a new issue per view and logger.
 `fingerprint_asgi_executor_teardown` pins both shapes to
 `("asgi-shutdown", "current-thread-executor-quit")`, the fingerprint `user-management` already
 uses. It fingerprints rather than drops: the same text also covers a genuinely broken executor,
@@ -405,12 +405,12 @@ class OrganizationConfigViewSet(SuperuserOrgScopeMixin, BaseViewSet):
 ```
 
 The mixin is runtime-only. OpenAPI advertising stays in the repo through one of the four
-helpers — `description` is required, so the published contract text never moves silently.
+helpers, `description` is required, so the published contract text never moves silently.
 
 ## Change history
 
 ```python
-# service/models.py — the mixin sits alongside the repo's own base
+# service/models.py: the mixin sits alongside the repo's own base
 from netix_backend.django.change_history import ChangeHistoryModel
 from netix_backend.django.models import BaseModel
 
@@ -439,7 +439,7 @@ Every save diffs `history_fields` against the values the row was loaded with and
 
 The mixin also accepts a write-only `change_reason` (capped at `MAX_REASON_LENGTH`), folded onto
 the actor for that one save so it lands as `reason` on the entry the write produces. It is never a
-model field — the mixin pops it before `validated_data` reaches the model. An explicit
+model field, the mixin pops it before `validated_data` reaches the model. An explicit
 `Meta.fields` list has to name it; `fields = "__all__"` picks it up on its own.
 
 A delete carries no body, so its reason arrives as a query parameter instead:

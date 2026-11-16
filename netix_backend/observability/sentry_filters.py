@@ -97,18 +97,18 @@ def event_text_candidates(event: Event, hint: Hint | None = None) -> list[str]:
     candidates = exception_chain_text(hint_exception(hint))
     if not isinstance(event, Mapping):
         return candidates
-    # Serialized exception values — logging-integration events carry no exc_info.
+    # Serialized exception values: logging-integration events carry no exc_info.
     for exc_data in _exception_values(event):
         if not isinstance(exc_data, Mapping):
             continue
         exc_type, exc_val = exc_data.get("type"), exc_data.get("value")
         if exc_val:
             candidates.append(f"{exc_type}: {exc_val}" if exc_type else str(exc_val))
-    # Log entry — both the "%s"-style template and the formatted string.
+    # Log entry: both the "%s"-style template and the formatted string.
     logentry = event.get("logentry") or {}
     if isinstance(logentry, Mapping):
         candidates += [str(logentry[key]) for key in ("message", "formatted") if logentry.get(key)]
-    # Event message — a plain string or a {message, formatted} dict.
+    # Event message: a plain string or a {message, formatted} dict.
     event_msg = event.get("message")
     if isinstance(event_msg, Mapping):
         candidates += [str(event_msg.get("message") or ""), str(event_msg.get("formatted") or "")]

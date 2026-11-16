@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.7.1 — unreleased
+## v1.7.1: unreleased
 
 ### Fixed
 
@@ -9,7 +9,7 @@
 
 - Require patched DRF 3.18.2 and Certifi 2026.10.19 or newer; the development toolchain also requires Pylint 4.0.9 or newer.
 
-## v1.7.0 — 2026-10-15
+## v1.7.0: 2026-10-15
 
 ### Fixed
 
@@ -38,17 +38,17 @@
 
 ### Added
 
-- `netix_backend.asgi.testing.HangUpCycle(after)` — a client that sends its request and hangs up
+- `netix_backend.asgi.testing.HangUpCycle(after)`: a client that sends its request and hangs up
   after `after` seconds, as kubelet does at a probe's `timeoutSeconds`. Drive a service's own
   Django application with it to check the stack survives the cancellation.
 
-## v1.6.1 — 2026-10-12
+## v1.6.1: 2026-10-12
 
 ### Fixed
 
 - `configure_sentry()` always disables the Sentry Redis integration, preserving caller-supplied disabled integrations. The synchronous SDK wrapper retains entered spans when a Redis command raises; this leaks even with zero or omitted transaction sampling. NETIX Redis tracing remains owned by OpenTelemetry, and Sentry error reporting is unchanged.
 
-## v1.6.0 — 2026-10-09
+## v1.6.0: 2026-10-09
 
 ### Added
 
@@ -59,7 +59,7 @@
   treats an entry as live for 24h after its last heartbeat, so a long-running pod no longer ages out
   and a decommissioned service drops out by itself. Heartbeat failures log at WARNING only, so an
   update-service outage never raises an error event from every pod once a minute.
-- **`netix_backend.discovery`** — `service_url(name, fallback_env)` resolves a peer's internal base URL
+- **`netix_backend.discovery`**: `service_url(name, fallback_env)` resolves a peer's internal base URL
   from update-service's `/api/registry/discovery/` (override, else live registration), falling back to the
   legacy `*_SVC_URL` variable. `frontend_origins()` returns the public origins of registered frontends.
   Only a process's first lookup blocks; the cache then refreshes every 60s on a background thread
@@ -68,14 +68,14 @@
   its cache key, so an operator override reaches a running process without a restart.
   `build_static_client` resolves `static-service` the same way before `STATIC_SVC_URL`.
 
-## v1.5.0 — unreleased
+## v1.5.0: unreleased
 
 ### Added
 
 Both halves of this come from the fleet-wide GlitchTip RCA across 18 backends, which found the
 two most valuable Sentry-hygiene controls living inside individual services rather than here.
 
-- **`netix_backend.observability.sentry.is_interactive_shell(argv=None)`** — true when the
+- **`netix_backend.observability.sentry.is_interactive_shell(argv=None)`**: true when the
   process is a human at a prompt rather than a server or a worker, so an operator's typo never
   alerts. Promoted from `user-management`, whose copy `ml-engine` and `data-service` had each
   duplicated verbatim; the other 15 services had nothing. Missing shell guards accounted for
@@ -85,14 +85,14 @@ two most valuable Sentry-hygiene controls living inside individual services rath
   `BARE_INTERPRETER_ARGV0` (`"-c"`, `""`, `"-"`).
 
   **The promoted version is broader than the three copies.** They tested `argv[1]` only, so a
-  bare `python -c "..."` — where `sys.argv` is just `["-c"]` and `len(argv) > 1` is already
-  False — could not be caught structurally. Five operator-typo issues leaked into
+  bare `python -c "..."`, where `sys.argv` is just `["-c"]` and `len(argv) > 1` is already
+  False, could not be caught structurally. Five operator-typo issues leaked into
   `data-service` through exactly that path, ten days after its own guard merged. Matching
   `argv[0]` against `BARE_INTERPRETER_ARGV0` closes it and also covers the REPL and a script on
   stdin. An empty `argv` stays False on purpose: muting Sentry for a real server process is the
   worse failure, so an argv we cannot read is never assumed interactive.
 
-- **`netix_backend.observability.sentry_filters.fingerprint_db_infra_errors`** — a ready-made
+- **`netix_backend.observability.sentry_filters.fingerprint_db_infra_errors`**: a ready-made
   `before_send` pinning every PgBouncer/libpq connect failure to
   `("db-infra", "postgres-connection-failure")` and a post-failover standby write to
   `("db-infra", "postgres-read-only-transaction")`. Promoted from `user-management`, the only
@@ -102,26 +102,26 @@ two most valuable Sentry-hygiene controls living inside individual services rath
 
   The signature lists ship alongside it as `DB_CONNECT_SIGNATURES` and `DB_READONLY_SIGNATURES`
   so a service can extend rather than fork them. `DB_CONNECT_SIGNATURES` adds
-  `"terminating connection due to administrator command"` — Postgres' wording for
+  `"terminating connection due to administrator command"`, Postgres' wording for
   `pg_terminate_backend`, a restart or a failover, seen in `gateway-service` and absent from
   every existing copy.
 
-- **`DB_STATEMENT_TIMEOUT_SIGNATURES` and `fingerprint_db_statement_timeouts`** — opt-in, and
+- **`DB_STATEMENT_TIMEOUT_SIGNATURES` and `fingerprint_db_statement_timeouts`**: opt-in, and
   deliberately **not** part of `fingerprint_db_infra_errors`.
-  `"canceling statement due to statement timeout"` is as often one slow application query — a
-  missing index, an N+1, an unbounded report — as it is infrastructure, and folding it into the
+  `"canceling statement due to statement timeout"` is as often one slow application query, a
+  missing index, an N+1, an unbounded report, as it is infrastructure, and folding it into the
   connection-failure issue would bury a real performance regression where nobody looks for it.
   A service whose `statement_timeout` is short enough to be purely an infra circuit-breaker
   opts in; the filter still uses its own `("db-infra", "postgres-statement-timeout")`
   fingerprint rather than merging into the connection-failure one.
 
-- **`fingerprint_asgi_executor_teardown` and `ASGI_EXECUTOR_TEARDOWN_SIGNATURES`** — a
+- **`fingerprint_asgi_executor_teardown` and `ASGI_EXECUTOR_TEARDOWN_SIGNATURES`**: a
   ready-made `before_send` pinning asgiref#526's
   `RuntimeError: CurrentThreadExecutor already quit or is broken` to
   `("asgi-shutdown", "current-thread-executor-quit")`. A client that disconnects before a
   response exists makes Django's ASGI handler run `request_finished`, whose sync receivers hit
-  an already-quit executor. Harmless per request, but reported twice — DjangoIntegration's
-  capture and uvicorn's "Exception in ASGI application" log — and fragmented into a new
+  an already-quit executor. Harmless per request, but reported twice, DjangoIntegration's
+  capture and uvicorn's "Exception in ASGI application" log, and fragmented into a new
   GlitchTip issue per view and logger (`ml-engine` ML-ENGINE-4M/4N, `asset-service`
   ASSET-SERVICE-OVN/OVO). Promoted from `user-management`, whose fingerprint it reuses verbatim
   so its existing issue keeps absorbing the events.
@@ -141,14 +141,14 @@ two most valuable Sentry-hygiene controls living inside individual services rath
 
   **Why default-on.** The whole point of the promotion is that 15 services acquire the guard by
   bumping the pin rather than by copying a predicate; an opt-in parameter would reproduce the
-  3-of-18 split the RCA found. This is the same reasoning as `prepare_threshold` below — the
+  3-of-18 split the RCA found. This is the same reasoning as `prepare_threshold` below, the
   safe value should be the one a service gets for free.
 
   **Who is affected.** `user-management`, `ml-engine` and `data-service` already fold
   `IS_INTERACTIVE_SHELL` into their own `SENTRY_ENABLED`; double-applying it is a no-op and
   their behaviour is unchanged. The other 15 stop reporting from `manage.py shell` /
   `shell_plus` / `dbshell` and from bare-interpreter runs on their next bump. No server, worker
-  or management-command process is affected — `runserver`, a uvicorn/gunicorn invocation,
+  or management-command process is affected, `runserver`, a uvicorn/gunicorn invocation,
   `migrate`, `collectstatic` and a `manage.py run_worker`-style worker are covered by tests
   precisely because muting one of those would be a serious regression.
 
@@ -159,7 +159,7 @@ two most valuable Sentry-hygiene controls living inside individual services rath
 
 - **`netix_backend.database.postgres_database(...)`: `prepare_threshold` now defaults to `None`
   instead of `OMIT`.** Every alias the factory builds therefore carries
-  `OPTIONS = {"prepare_threshold": None}`, which disables psycopg's prepared statements — the
+  `OPTIONS = {"prepare_threshold": None}`, which disables psycopg's prepared statements, the
   setting pgbouncer needs in transaction pooling mode, where a prepared statement is prepared on
   one server connection and executed on another.
 
@@ -171,13 +171,13 @@ two most valuable Sentry-hygiene controls living inside individual services rath
   safe value the one a service gets for free, and the split disappears.
 
   **Who is affected.** The nine services that state `prepare_threshold=None` explicitly are
-  unaffected — the argument they already pass is what the default now produces, and their
+  unaffected, the argument they already pass is what the default now produces, and their
   `DATABASES` dict is byte-identical on v1.5.0. The nine that stated nothing gain the
   `OPTIONS` key on their next bump; behind pgbouncer that is the fix, and against a direct
   Postgres connection it only forgoes server-side statement caching.
 
-  **Opting out.** An alias that must keep prepared statements — or must keep having no
-  `OPTIONS` key at all — passes `prepare_threshold=OMIT`, which drops the key and, with no
+  **Opting out.** An alias that must keep prepared statements, or must keep having no
+  `OPTIONS` key at all, passes `prepare_threshold=OMIT`, which drops the key and, with no
   `connect_timeout` / `options` set, the whole `OPTIONS` dict.
 
 ### Migration notes
@@ -199,41 +199,41 @@ two most valuable Sentry-hygiene controls living inside individual services rath
   service (notably `ml-engine` and `asset-service`) adds it to its `before_send` chain ahead of
   `group_log_events_by_template`.
 
-## v1.4.0 — 2026-09-11
+## v1.4.0: 2026-09-11
 
 *Why* a change was made, alongside the *what*, *when* and *by whom* v1.3.0 already recorded.
 Ported from `user-management` issue #840, which extended its own copy of the trail while the
-promotion was in flight; only the generic half comes across — re-resolving actor names against a
+promotion was in flight; only the generic half comes across, re-resolving actor names against a
 repo's own user records stays in the repo that has them.
 
 Backward compatible: every new parameter is optional, `ChangeActor()` still constructs with no
 arguments and `reason` is declared **last** so positional construction keeps its old meaning. A
-consumer that never mentions a reason behaves exactly as it does on v1.3.0 — with one observable
+consumer that never mentions a reason behaves exactly as it does on v1.3.0, with one observable
 difference, below.
 
 ### Added
 
 - `netix_backend.django.change_history`:
-  - `ChangeActor.reason` (default `""`) and `ChangeActor.from_user(..., reason="")` — free text,
+  - `ChangeActor.reason` (default `""`) and `ChangeActor.from_user(..., reason="")`: free text,
     stated per write, never inferred.
-  - `reason_context(reason)` — a context manager that folds a reason onto the **already-bound**
+  - `reason_context(reason)`: a context manager that folds a reason onto the **already-bound**
     actor for one write and restores it afterwards. The actor is bound per request; only the
     reason varies per save, so this replaces rather than rebuilds it.
   - `actor_context(..., reason="")` for the non-request write paths.
-  - `normalize_reason(value)` — trims, caps at `MAX_REASON_LENGTH`, collapses anything falsy to
+  - `normalize_reason(value)`: trims, caps at `MAX_REASON_LENGTH`, collapses anything falsy to
     `""`, so a reason never reaches the trail as `null` or as untrimmed free text.
-  - `reason_from_query(request)` — the reason a body-less write (`DELETE`) states in its query
+  - `reason_from_query(request)`: the reason a body-less write (`DELETE`) states in its query
     string. Reads `query_params`, falls back to `GET`, tolerates `None`; the request body is
     deliberately never parsed.
   - `REASON_FIELD` (`change_reason`) and `MAX_REASON_LENGTH` (`256`).
 - `netix_backend.django.serializers`:
-  - `ChangeHistorySerializerMixin.change_reason` — write-only, not required, blank allowed, capped
+  - `ChangeHistorySerializerMixin.change_reason`: write-only, not required, blank allowed, capped
     at `MAX_REASON_LENGTH`. `validate()` pops it onto `self._change_reason` rather than leaving it
     in `validated_data`, where `ModelSerializer` would hand it to `Model(**validated_data)` and
     fail on a field the model does not have; `save()` then wraps `super().save()` in
     `reason_context` when one was stated.
-  - `ChangeHistoryEntrySerializer.reason` — read-only, blank and null both allowed.
-- `netix_backend.django.change_history_schema` — `REASON_PARAMETER`, the ready-made
+  - `ChangeHistoryEntrySerializer.reason`: read-only, blank and null both allowed.
+- `netix_backend.django.change_history_schema`: `REASON_PARAMETER`, the ready-made
   `OpenApiParameter` for a `destroy` action, plus `reason_parameter(description=…, name=…)` and
   `REASON_DESCRIPTION`, mirroring the `HISTORY_PARAMETER` trio.
 
@@ -242,7 +242,7 @@ difference, below.
 - **Every entry now carries a `reason` key**, empty when the write stated none. This is the one
   observable difference for a consumer that never mentions a reason: entries written from v1.4.0
   on have `"reason": ""` where v1.3.0's had no key at all. Nothing else about the entry moves, no
-  migration is generated, and entries recorded before the key existed stay as they are —
+  migration is generated, and entries recorded before the key existed stay as they are,
   `ChangeHistoryEntrySerializer` serves those as `null`, which is how a client tells "no reason
   was asked for" from "none was given".
 
@@ -265,7 +265,7 @@ difference, below.
 - A serializer whose `Meta.fields` is an explicit list must add `"change_reason"` to it for the
   field to be accepted; one on `fields = "__all__"` picks the mixin's declared fields up itself.
 
-## v1.3.0 — 2026-09-11
+## v1.3.0: 2026-09-11
 
 The on-row change trail, promoted out of `user-management` (issue #815) so `cafm-backend` adopts
 one implementation instead of a second fork. Behavior-preserving: this is the `user-management`
@@ -275,7 +275,7 @@ subclasses the middleware rather than forking it.
 
 ### Added
 
-- `netix_backend.django.change_history` — runtime only, no drf-spectacular import anywhere, so a
+- `netix_backend.django.change_history`: runtime only, no drf-spectacular import anywhere, so a
   repo without the `spectacular` extra can still mix the model in:
   - `ChangeHistoryModel`, an abstract mixin carrying a `change_history` JSONField. Declare
     `history_fields` (nothing is recorded while it is empty) and every save diffs those fields
@@ -286,7 +286,7 @@ subclasses the middleware rather than forking it.
     `old_display` / `new_display`, and `history_max_entries` (default 50) caps the trail.
   - `ChangeActor` + the `contextvars` binding (`get_actor`, `set_actor`, `reset_actor`,
     `actor_context`). `ChangeActor.from_user()` is duck-typed on `pk` / `get_full_name()` /
-    `username` — nothing here imports `django.contrib.auth`, and a non-integer `pk` degrades to
+    `username`, nothing here imports `django.contrib.auth`, and a non-integer `pk` degrades to
     `user_id=None` rather than writing an unqueryable id into the trail.
   - `ChangeHistoryActorMiddleware` (sync + async), which **resets** the actor around each request
     and binds nobody by default. Overriding `resolve_actor(request) -> ChangeActor | None` is the
@@ -300,7 +300,7 @@ subclasses the middleware rather than forking it.
   `change_history` in `__init__` (not after `to_representation`, which would serialize the whole
   trail and then throw it away) for any request that did not pass `?include_history=true`, and
   keeps the field declared for schema generation (`swagger_fake_view`).
-- `netix_backend.django.change_history_schema` — `HISTORY_PARAMETER` (the ready-made
+- `netix_backend.django.change_history_schema`: `HISTORY_PARAMETER` (the ready-made
   `OpenApiParameter`, same prose as today), `history_parameter(description=…, name=…)` for a repo
   that wants its own, and `HISTORY_DESCRIPTION`. Split from the runtime module for the same reason
   `org_scope_schema` is split from `org_scope`: drf-spectacular stays optional.
@@ -324,7 +324,7 @@ subclasses the middleware rather than forking it.
   `OrganizationUser`, since the library has no such model. It is prose in the generated schema
   only; regenerate the OpenAPI contract when adopting.
 
-## v1.2.0 — 2026-08-25
+## v1.2.0: 2026-08-25
 
 Third wave: the Tier-1/Tier-3 reuse candidates, verified by a six-survey research pass over the
 18 services. Everything ships behavior-preserving; per-repo call sites reproduce today's
@@ -332,13 +332,13 @@ settings byte-identical.
 
 ### Added
 
-- `netix_backend.database` (Django-free; also importable as `netix_backend.django.database`) —
+- `netix_backend.database` (Django-free; also importable as `netix_backend.django.database`):
   `postgres_database(...)` and `replica_of(...)` DATABASES factories with `FromEnv` (raw
   `os.environ` semantics: an empty string stays an empty string) and the `OMIT` / `REQUIRED`
   sentinels (now homed in `netix_backend.env`). `OPTIONS` is emitted only when a member is
   set, so the fleet's 9-present / 9-absent `prepare_threshold` split survives adoption
   unchanged; flipping it is a visible one-argument diff per repo.
-- `netix_backend.observability.sentry.configure_sentry(...)` — the `sentry_sdk.init`
+- `netix_backend.observability.sentry.configure_sentry(...)`: the `sentry_sdk.init`
   boilerplate 17 services repeat. `environment` is required with no default (a hardcoded
   "main" stays a visible argument; unification remains a separate reviewable change);
   `enabled` is computed at the call site so all five fleet `SENTRY_ENABLED` spellings survive
@@ -346,7 +346,7 @@ settings byte-identical.
   (simulator-service relies on that path); `traces_sample_rate=OMIT` omits the kwarg
   (user-management), `logging_event_level=None` sends `LoggingIntegration(event_level=None)`
   (backend-template).
-- `netix_backend.django.test_settings` — the two-phase test-settings bootstrap:
+- `netix_backend.django.test_settings`: the two-phase test-settings bootstrap:
   `apply_test_env(force=..., exclude=..., **overrides)` (applies, unlike v1.1.0's dead
   `netix_test_settings()`; `force=` for cafm's hard-set Redis keys, `exclude=` so
   user-management's `DJANGO_SECRET`-derived MFA keys stay untouched), `load_base_settings()`,
@@ -358,7 +358,7 @@ settings byte-identical.
   fixture), `clear_envoy_cache`, `envoy_request_factory`. None autouse. The test middlewares
   now honor a `NETIX_TEST_ENVOY_HEADER_GUARD` setting (default True), so the two repos pinning
   `header_guard = False` can delete their subclass files.
-- `netix_backend.django.org_scope.SuperuserOrgScopeMixin` — the superuser `?organization=<id>`
+- `netix_backend.django.org_scope.SuperuserOrgScopeMixin`: the superuser `?organization=<id>`
   cross-org mechanism four repos fork, runtime only: the mixin never defines `schema`, never
   imports drf-spectacular, never emits a parameter. Knobs cover every measured divergence
   (blank-param handling, invalid-message text, scope field, ordering, extra filter) and both
@@ -366,7 +366,7 @@ settings byte-identical.
   four advertising helpers live in `netix_backend.django.org_scope_schema`
   (`..._parameter` / `..._schema` / `..._autoschema` / `..._parameter_dict`); `description`
   is required on all four so the library can never rewrite a repo's contract prose.
-- `prospector_profile_netix` — a second package in the same wheel carrying the shared
+- `prospector_profile_netix`: a second package in the same wheel carrying the shared
   prospector profile; consume with `inherits: [netix]` (Django variant: `[netix:django]`).
   The top-level `max-line-length: 120` is the only key that also raises pylint's threshold;
   `test-warnings` is deliberately unset (setting it strips prospector's default
@@ -375,14 +375,14 @@ settings byte-identical.
 ### Migration notes
 
 - The pin bump to v1.2.0 and a repo's `prospector.yaml` switch to `inherits: [netix]` must
-  land in the same commit — inheriting against an installed v1.1.0 is a hard prospector
+  land in the same commit, inheriting against an installed v1.1.0 is a hard prospector
   failure.
 - `postgres_database` / `configure_sentry` adoption calls are catalogued per repo in the
   research spec; dict contents are identical but key order is canonical (`key_order=` is the
   escape hatch for repr-snapshot tests).
 - vision-ai-service adopts the database factory with three explicit `OMIT`s and has no Sentry.
 
-## v1.1.0 — 2026-08-25
+## v1.1.0: 2026-08-25
 
 Second extraction wave: an opus research sweep across the 18 services surfaced twelve more
 cross-repo duplications; all twelve ship here. Defaults preserve today's fleet behaviour;
@@ -390,7 +390,7 @@ deliberate fixes are opt-in per service.
 
 ### Added
 
-- `netix_backend.asgi` — the ASGI/WSGI entrypoint layer, importable without Django configured:
+- `netix_backend.asgi`: the ASGI/WSGI entrypoint layer, importable without Django configured:
   - `asgi.timeout.RequestTimeoutMiddleware`, the wall-clock request ceiling that answers 504,
     abandons (never cancels) the in-flight task, mutes the wrapped app's `send` once it has
     replied, and sheds with 503 + `Retry-After` past `MAX_ABANDONED_REQUESTS`. Ships the gen-3
@@ -400,19 +400,19 @@ deliberate fixes are opt-in per service.
     `safe_methods=None` caps every method (an empty set caps none), `timeout_setting=` resolves
     the ceiling from a Django setting lazily in `__init__`, and `error_body=` swaps the reply
     renderer (`error_messages` envelope or `text_messages` text/plain).
-  - `asgi.lifespan.wrap()` / `LifespanWrapper` / `serve_lifespan()` — the lifespan handshake
+  - `asgi.lifespan.wrap()` / `LifespanWrapper` / `serve_lifespan()`: the lifespan handshake
     Django does not implement. Pure: it no longer triggers service registration on the way past.
-  - `asgi.registration` — the env-driven update-service self-registration client, its fixed
+  - `asgi.registration`: the env-driven update-service self-registration client, its fixed
     `RETRY_DELAYS = (0, 1, 2, 4, 8, 16, 30, 60)` ladder on a daemon thread, the once-per-process
     latch with a `reset_registration_state()` test hook, and the `ServiceRegistrationASGI` /
     `ServiceRegistrationWSGI` wrappers. Stdlib urllib only, so it stays importable in a
     pre-`django.setup()` boot path. Re-exported as `netix_backend.registration`.
-  - `asgi.types` — shared `Scope` / `Receive` / `Send` / `Message` / `ASGIApp` / `WSGIApp` aliases.
-  - `asgi.testing.RequestTimeoutContract` — the contract suite 15 repos copy-paste, as a
+  - `asgi.types`: shared `Scope` / `Receive` / `Send` / `Message` / `ASGIApp` / `WSGIApp` aliases.
+  - `asgi.testing.RequestTimeoutContract`: the contract suite 15 repos copy-paste, as a
     subclassable pytest class plus its harness (`slow_app`, `drive`, `ServerCycle`, `slow_view`,
     `django_scope`). The `db_timeout` cross-assertion, the "no `timeout` entry in
     `settings.MIDDLEWARE`" assertion and the event-loop check are opt-in knobs.
-- `netix_backend.observability.otel` — the OpenTelemetry bootstrap vendored in 17 services
+- `netix_backend.observability.otel`: the OpenTelemetry bootstrap vendored in 17 services
   (`configure(service_name=None)`, `is_configured()`, `reset_for_tests()`). Every
   `opentelemetry` import stays function-local, so a service without the new `[otel]` extra
   still imports and boots. Ships the `opentelemetry-instrumentation-asgi` guard that stops the
@@ -420,42 +420,42 @@ deliberate fixes are opt-in per service.
   through a guarded fallback so an SDK bump that drops the private `_get_from_env_or_default`
   degrades to the SDK default instead of failing boot. New `[otel]` extra carries the seven
   `opentelemetry-*` pins.
-- `netix_backend.observability.logging` — `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`,
+- `netix_backend.observability.logging`: `CONSOLE_FORMAT`, `TRACE_ID_FIELDS`,
   `TRACE_ID_DEFAULTS`, `DEFAULT_LOGGERS`, `logging_config()`, plus `ContextFormatter` /
   `log_context()` / `LOG_CONTEXT_KEY` lifted from the three `app/log_formatters.py` copies.
   `otel.configure()` imports `TRACE_ID_FIELDS` from the same module, so the format string and
   the `LoggingInstrumentor` injection stop agreeing only by copy-paste.
-- `netix_backend.observability.sentry_filters` — composable `before_send` filters as pure
+- `netix_backend.observability.sentry_filters`: composable `before_send` filters as pure
   functions over event dicts, with no `sentry_sdk` import anywhere in the library:
   `drop_cancelled_errors`, `drop_client_errors(*classes, status_range=…)`,
   `group_log_events_by_template`, `drop_matching_signatures`, `fingerprint_matching_signatures`,
   the `hint_exception` / `exception_chain_text` / `event_text_candidates` / `event_text`
   extraction helpers, `IGNORED_TELEMETRY_LOGGERS`, and `chain(*filters)`.
-- `netix_backend.cloning` (Django-free) — the org-prefixed machine-key contract seven repos
+- `netix_backend.cloning` (Django-free): the org-prefixed machine-key contract seven repos
   carry a private copy of: `TEMPLATE_ORG_ID`, `ORG_KEY_PREFIX`, `PROVENANCE_FIELDS`,
   `org_prefix`, `base_key`, `org_key`, `key_owner`, `is_org_key`. Vendored rather than
   re-exported: envoy-pyauth v2.0.0 ships no `cloning` module and the library's floor is
   `>=2.0.0`. Pairs with the existing `CloneProvenanceMixin`.
-- `netix_backend.django.db_timeout` — the per-connection Postgres `statement_timeout` receiver
+- `netix_backend.django.db_timeout`: the per-connection Postgres `statement_timeout` receiver
   (`DB_STATEMENT_TIMEOUT_MS`, `MIGRATION_COMMANDS`, `is_migration_process()`,
   `statement_timeout_ms()`, `install()`, `uninstall()`). PgBouncer rejects the option as a
   startup parameter and leaks a prior client's ceiling onto a pooled connection, so every new
-  connection is `SET` explicitly — including `SET statement_timeout = 0` for migration commands.
+  connection is `SET` explicitly, including `SET statement_timeout = 0` for migration commands.
   Registration is explicit via `install()` rather than an import side effect.
-- `netix_backend.django.org_bootstrap` — `build_org_bootstrap_view(clone=…, teardown=…)`,
+- `netix_backend.django.org_bootstrap`: `build_org_bootstrap_view(clone=…, teardown=…)`,
   `OrgBootstrapBaseView`, the serializers, the `ClonePrimitives` / `TeardownPrimitives`
   protocols and a shared `CloneError`. Each of the six services drops a ~70-line
   `views_bootstrap.py` for a three-line binding.
-- `netix_backend.django.cache` — `redis_caches(...)` and `cache_ttls(...)` returning frozen
+- `netix_backend.django.cache`: `redis_caches(...)` and `cache_ttls(...)` returning frozen
   `RedisCacheSettings` / `CacheTtls` dataclasses, replacing the `SENTINEL_ENABLED` if/else that
   13 `settings.py` copy verbatim. Emits the whole django_redis knob set so the
   `ignore_logger()` pattern survives adoption.
-- `netix_backend.django.testing` — `EnvoyTestAuthorizationMiddleware` and
+- `netix_backend.django.testing`: `EnvoyTestAuthorizationMiddleware` and
   `ExplicitEnvoyIdentityMiddleware` (settings-driven via `NETIX_TEST_ENVOY_IDENTITY` /
   `NETIX_TEST_ENVOY_BEARER`), `swap_auth_middleware()`, `platform_test_identity()`, and
-  `assert_timeout_invariant()` — the `REQUEST_TIMEOUT_SECONDS > DB_STATEMENT_TIMEOUT_MS / 1000`
+  `assert_timeout_invariant()`, the `REQUEST_TIMEOUT_SECONDS > DB_STATEMENT_TIMEOUT_MS / 1000`
   assertion nine repos duplicate.
-- `netix_backend.django.excel_aio.AsyncExcelViewSet` — the adrf export shape (`list` via
+- `netix_backend.django.excel_aio.AsyncExcelViewSet`: the adrf export shape (`list` via
   `async_to_sync(self.alist)`, plus `alist` / `aretrieve`, all carrying the binary response
   override).
 
@@ -484,19 +484,19 @@ deliberate fixes are opt-in per service.
 
 - Behaviour-preserving by default: `redis_caches(ignore_exceptions=False)` keeps today's
   behaviour; the multi-host `SENTINEL_HOSTS` parser is opt-in via `sentinel_hosts=`.
-- `db_timeout.install()` must be called explicitly — the repo copies registered via an
+- `db_timeout.install()` must be called explicitly: the repo copies registered via an
   `@receiver` import side effect; omitting the line silently drops the ceiling.
 - `EnvoyTestAuthorizationMiddleware.header_guard` defaults True; update-service and
   stormbreaker_backend gain honest permission-denial tests, which should land as a visible
   change.
 - `reset_for_tests()` replaces `importlib.reload(app.otel)` in local otel tests; adopting the
   `[otel]` extra means dropping the seven direct `opentelemetry-*` pins per service.
-- Adoption must not touch `sentry_sdk.init(environment=…)` — see the SENTRY_ENVIRONMENT survey
+- Adoption must not touch `sentry_sdk.init(environment=…)`: see the SENTRY_ENVIRONMENT survey
   in the adoption notes; stormbreaker's ConfigMap/env mismatch is its own PR.
 - report-engine is out of scope for the request ceiling (gevent deploy model, no ASGI path); it
   can still adopt `asgi.registration`.
 
-## v1.0.2 — 2026-08-23
+## v1.0.2: 2026-08-23
 
 ### Fixed
 
@@ -507,7 +507,7 @@ deliberate fixes are opt-in per service.
   that re-added a `GET_LIB_DOC_EXCLUDES` hook for this can drop it.
 
 
-## v1.0.1 — 2026-08-23
+## v1.0.1: 2026-08-23
 
 Fixes from the redirect-service pilot adoption (NETIX-AI/redirect-service#155).
 
@@ -517,7 +517,7 @@ Fixes from the redirect-service pilot adoption (NETIX-AI/redirect-service#155).
   `uv lock` for repos pinning their own envoy-pyauth); the dev pin moved into the dev
   dependency-group as a direct URL. Consumers no longer need `override-dependencies`.
 - `NETIX_ERRORS_NON_VALIDATION_AS_LIST` now defaults **False**: the template family emits
-  `str(exc)` — a bare string — for 401/403/405/500-class errors. The list shape is opt-in
+  `str(exc)`, a bare string, for 401/403/405/500-class errors. The list shape is opt-in
   (simulator-service pins it True).
 - `EnvoyPermissionMixin.get_authenticate_header` is now knob-driven (`authenticate_header`,
   default `None`): adopting `BaseViewSet` no longer silently flips failed-auth 403 → 401.
@@ -532,31 +532,31 @@ Fixes from the redirect-service pilot adoption (NETIX-AI/redirect-service#155).
 Consumers that worked around v1.0.0 with `[tool.uv] override-dependencies` or a
 `spectacular` docstring-exclusion hook can drop both on upgrade.
 
-## v1.0.0 — 2026-08-23
+## v1.0.0: 2026-08-23
 
 Initial release: the shared base layer extracted from the 18 NETIX backend services.
 
 ### Added
 
-- `netix_backend.env` — env parsing (`env_bool`, `env_bool_strict`, `env_str`, `env_int`,
+- `netix_backend.env`: env parsing (`env_bool`, `env_bool_strict`, `env_str`, `env_int`,
   `env_float`, `env_first`, `service_authorization`, `ConfigurationError`).
-- `netix_backend.http` — `RetryTransport`/`AsyncRetryTransport` (idempotent-safe status retries,
+- `netix_backend.http`: `RetryTransport`/`AsyncRetryTransport` (idempotent-safe status retries,
   equal-jitter backoff, Retry-After incl. HTTP-date, `retries=0` disables), `build_client`
   generated-client factory, `request_with_retry`/`post_with_retry` (deadline-capped),
   `static_upload`/`static_fetch` (accepts 200-on-dedup and 201, required `retention_date`),
   `healthz_view`/`healthz_asgi`.
-- `netix_backend.django.models` — `BaseModel` (auto_now + `update_fields` injection,
+- `netix_backend.django.models`: `BaseModel` (auto_now + `update_fields` injection,
   IntegrityError→ValidationError in `save` and `asave`, `soft_delete`/`asoft_delete`,
   `validate_soft_delete` hook), `NamedBaseModel`, `SluggedNamedBaseModel`,
   `CompactNamedBaseModel`, `BaseManager` (`get_or_none`/`aget_or_none`), `BaseQuerySet`
   (`alive`/`dead`/`stamp_and_update`), `CloneProvenanceMixin`, `organization_scoped()`.
-- `netix_backend.django.views` — `BaseViewSet` composed from `EnvoyPermissionMixin`,
+- `netix_backend.django.views`: `BaseViewSet` composed from `EnvoyPermissionMixin`,
   `EnvoyScopedQuerysetMixin` (keyword-only superset signature, works against envoy-pyauth v2 and
   v3), `TenantWriteScopeMixin` (`off`/`pin`/`pin_and_reject`), `AtomicWriteMixin`,
   `SoftDeleteMixin`, `ListErrorMappingMixin`, `IncludeDeletedMixin`,
   `CreateListModelMixin`/`UpdateListModelMixin`.
-- `netix_backend.django.views_aio` — `AsyncBaseViewSet` honoring sync `perform_create`/`perform_update` overrides.
-- `netix_backend.django.exceptions` — shared handler with `NETIX_ERRORS_STRINGIFIED` (default
+- `netix_backend.django.views_aio`: `AsyncBaseViewSet` honoring sync `perform_create`/`perform_update` overrides.
+- `netix_backend.django.exceptions`: shared handler with `NETIX_ERRORS_STRINGIFIED` (default
   True: today's wire shape), pluggable flatteners (`template`, `keyed`, `first_error`, `nested`,
   `sequence`), optional `DatabaseError`→503 branch.
 - `netix_backend.django.pagination`, `serializers`, `filters`, `schema`, `excel`, `testing`.

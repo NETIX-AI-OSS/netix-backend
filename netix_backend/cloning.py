@@ -28,7 +28,7 @@ PROVENANCE_FIELDS: Final[tuple[str, ...]] = ("cloned_from_id", "template_revisio
 
 
 def org_prefix(org_id: int) -> str:
-    """The key prefix owned by ``org_id`` — ``nc3_`` for organization 3."""
+    """The key prefix owned by ``org_id``, ``nc3_`` for organization 3."""
     return f"{ORG_KEY_PREFIX}{int(org_id)}_"
 
 

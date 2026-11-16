@@ -225,7 +225,7 @@ class ExcelWidgetViewSet(EnvoyHeaderMixin, BaseExcelViewSet):
 
 
 class UnscopedExcelViewSet(ExcelExportViewSet):
-    """The envoy-free core: every row, whoever asks — user-management scopes its own way."""
+    """The envoy-free core: every row, whoever asks, user-management scopes its own way."""
 
     serializer_class = ScopedWidgetSerializer
     queryset = ScopedWidget.objects.all()

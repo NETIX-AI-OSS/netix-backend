@@ -12,7 +12,7 @@ still mix :class:`ChangeHistoryModel` into its models.
 The library stays generic about *who* the actor is. :meth:`ChangeActor.from_user` is duck-typed on
 ``pk`` / ``get_full_name()`` / ``username`` and nothing here assumes ``django.contrib.auth``:
 :class:`ChangeHistoryActorMiddleware` only *resets* the actor around a request, and binding it stays
-the adopter's call — from ``request.user`` after DRF authentication, from an Envoy JWT payload, or
+the adopter's call, from ``request.user`` after DRF authentication, from an Envoy JWT payload, or
 from :func:`actor_context` on a non-request write path.
 """
 
@@ -98,7 +98,7 @@ class ChangeActor:
     def from_user(cls, user: Any, source: str = SOURCE_API, reason: str = "") -> ChangeActor:
         """Build an actor from any user-shaped object: ``pk``, ``get_full_name()``, ``username``.
 
-        Duck-typed on purpose — a Django ``AbstractUser``, a repo's own ``OrganizationUser`` and an
+        Duck-typed on purpose, a Django ``AbstractUser``, a repo's own ``OrganizationUser`` and an
         anonymous user all work, and a non-integer ``pk`` (a UUID, or ``AnonymousUser``'s ``None``)
         degrades to ``user_id=None`` rather than writing an unqueryable id into the trail.
         """
@@ -141,7 +141,7 @@ def reset_actor(token: Token[ChangeActor | None] | None = None) -> None:
 
 @contextmanager
 def actor_context(user: Any = None, source: str = SOURCE_SYSTEM, reason: str = "") -> Generator[ChangeActor]:
-    """Bind an actor for the duration of a block — the non-request write paths.
+    """Bind an actor for the duration of a block, the non-request write paths.
 
     Sheet imports, management commands and Celery tasks have no request to hang the actor off, so
     they wrap the write instead: ``with actor_context(submitter, source=SOURCE_UPLOAD):``.
@@ -163,7 +163,7 @@ def reason_context(reason: str) -> Generator[ChangeActor]:
     """Attach ``reason`` to the already-bound actor for one write, then restore it.
 
     The actor itself is bound per request; only the reason varies per save, so this replaces the
-    bound actor rather than rebuilding it — whoever is acting stays whoever the request said.
+    bound actor rather than rebuilding it, whoever is acting stays whoever the request said.
     Yields the actor as it was before the swap, the way :func:`actor_context` yields the one it bound.
     """
     actor = get_actor()
@@ -228,8 +228,8 @@ class ChangeHistoryActorMiddleware:
     def resolve_actor(self, request: HttpRequest) -> ChangeActor | None:
         """Hook: the actor to bind for ``request``; ``None`` (the default) binds nobody.
 
-        Override to bind from something the middleware layer can already see — an Envoy identity, a
-        service token — e.g. ``return ChangeActor(user_id=request.envoy["user_id"], source=SOURCE_API)``.
+        Override to bind from something the middleware layer can already see, an Envoy identity, a
+        service token, e.g. ``return ChangeActor(user_id=request.envoy["user_id"], source=SOURCE_API)``.
         """
         return None
 
@@ -269,7 +269,7 @@ def json_safe(value: Any) -> Any:
 class ChangeHistoryModel(models.Model):
     """Append-only \"who changed what, when\" trail kept on the row itself.
 
-    Mix in alongside the repo's own base — ``class Attendance(BaseModel, ChangeHistoryModel)`` — and
+    Mix in alongside the repo's own base, ``class Attendance(BaseModel, ChangeHistoryModel)``, and
     declare ``history_fields``. Nothing is recorded until that whitelist is non-empty.
     """
 
@@ -344,7 +344,7 @@ class ChangeHistoryModel(models.Model):
         self._change_history_snapshot = snapshot
 
     def _history_attname(self, name: str) -> str:
-        """The attribute holding the raw value — ``shift_id`` for a ``shift`` FK."""
+        """The attribute holding the raw value, ``shift_id`` for a ``shift`` FK."""
         try:
             return self._meta.get_field(name).attname  # type: ignore[union-attr]
         except Exception:  # pylint: disable=broad-exception-caught

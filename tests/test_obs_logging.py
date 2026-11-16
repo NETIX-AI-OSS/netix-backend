@@ -100,7 +100,7 @@ class TestLoggingConfig:
         assert config["loggers"]["django"] == {"handlers": ["console"], "propagate": False, "level": "INFO"}
 
     def test_root_level_is_taken_verbatim(self):
-        """stormbreaker/data-service pass os.getenv("DJANGO_LOG_LEVEL", "WARN") — "WARN", not "WARNING"."""
+        """stormbreaker/data-service pass os.getenv("DJANGO_LOG_LEVEL", "WARN"), "WARN", not "WARNING"."""
         assert logging_config(root_level="WARN")["root"]["level"] == "WARN"
 
     def test_loggers_accepts_a_bare_level(self):

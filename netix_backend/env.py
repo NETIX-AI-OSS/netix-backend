@@ -80,7 +80,7 @@ def env_bool_strict(name: str, default: bool = False, *, log: logging.Logger | N
     if normalized in FALSY:
         return False
     (log or logger).error(
-        "%s=%r is not a recognised boolean (true: %s / false: %s); treating it as %s — fix the ConfigMap.",
+        "%s=%r is not a recognised boolean (true: %s / false: %s); treating it as %s, fix the ConfigMap.",
         name,
         raw,
         sorted(TRUTHY),

@@ -1,4 +1,4 @@
-"""OpenTelemetry bootstrap — vendored; call configure() from both asgi.py and manage.py, post-fork."""
+"""OpenTelemetry bootstrap, vendored; call configure() from both asgi.py and manage.py, post-fork."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def configure(service_name: str | None = None) -> bool:
     try:
         import opentelemetry.instrumentation.asgi  # noqa: F401
     except ImportError:
-        logger.error("otel: opentelemetry-instrumentation-asgi missing — ASGI (uvicorn) requests will NOT be traced")
+        logger.error("otel: opentelemetry-instrumentation-asgi missing, ASGI (uvicorn) requests will NOT be traced")
 
     # Set BEFORE instrumenting so a raising instrumentor cannot cause a double-instrument on retry.
     _configured = True
@@ -115,7 +115,7 @@ def _init_sdk(exporter: str) -> bool:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 
-    # Respect a provider someone else installed (opentelemetry-instrument, a test harness) — never replace it.
+    # Respect a provider someone else installed (opentelemetry-instrument, a test harness): never replace it.
     if isinstance(trace.get_tracer_provider(), TracerProvider):
         logger.debug("otel: SDK TracerProvider already installed, leaving it")
         return False
